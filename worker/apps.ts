@@ -53,8 +53,8 @@ export async function addApp(env: Env, repo: string, origin: string) {
 }
 
 // Local mode: New app makes a git repo from the local template instead of the Deploy button.
-export async function newLocalApp(env: Env, name: unknown, origin: string) {
-  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name }) });
+export async function newLocalApp(env: Env, name: unknown, ownerEmail: unknown, origin: string) {
+  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name, owner_email: ownerEmail }) });
   return addApp(env, repo, origin);
 }
 
@@ -118,11 +118,12 @@ export async function writeFiles(env: Env, app: App, files: unknown, message: un
   return { commit: commit.sha.slice(0, 7), files: tree.map((t) => t.path), branch: "draft" };
 }
 
-// What the draft holds that main doesn't: Save's "unsaved changes".
+// What the draft holds that main doesn't, file by file: Save's "unsaved changes".
 export async function status(env: Env, app: App) {
-  if (!(await draftSha(env, app.repo, false))) return { unsaved_commits: 0, changed_files: [] as string[] };
+  if (!(await draftSha(env, app.repo, false))) return { draft: false, changed_files: [] as string[], files: [] };
   const c = await gh<{ ahead_by: number; files?: { filename: string; status: string; sha: string }[] }>(env, `/repos/${app.repo}/compare/main...draft`);
-  return { unsaved_commits: c.ahead_by, changed_files: c.ahead_by ? (c.files ?? []).map((f) => `${f.status} ${f.filename}`) : [], files: c.files ?? [] };
+  const files = c.ahead_by ? (c.files ?? []) : [];
+  return { draft: true, changed_files: files.map((f) => `${f.status} ${f.filename}`), files };
 }
 
 const blob = async (env: Env, repo: string, sha: string) => text((await gh<{ content: string }>(env, `/repos/${repo}/git/blobs/${sha}`)).content);
@@ -143,8 +144,8 @@ export async function checkDraft(env: Env, app: App, changed: { filename: string
 
 export async function save(env: Env, app: App) {
   const s = await status(env, app);
-  if (!s.unsaved_commits) throw new Refused("Nothing to save: the draft has no changes that aren't live already.");
-  const errors = await checkDraft(env, app, s.files ?? []);
+  if (!s.files.length) throw new Refused("Nothing to save: the draft has no changes that aren't live already.");
+  const errors = await checkDraft(env, app, s.files);
   if (errors.length) throw new Refused(`Not saved. The safety check failed:\n${errors.map((e) => `- ${e}`).join("\n")}`);
   try {
     await gh(env, `/repos/${app.repo}/merges`, { method: "POST", body: JSON.stringify({ base: "main", head: "draft", commit_message: "Save from Dozokit Apps" }) });
@@ -152,5 +153,5 @@ export async function save(env: Env, app: App) {
     if ((e as { status?: number }).status === 409) throw new Refused("Not saved: the draft and main changed the same lines. Update the draft from main first.");
     throw e;
   }
-  return { saved: s.changed_files, live_url: app.live_url };
+  return { saved: s.changed_files, live_url: app.live_url, note: "Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app." };
 }

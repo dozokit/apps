@@ -3,7 +3,7 @@ import { lang, setLang, t, tr } from "./lib/i18n";
 
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
 type State = { version: string; local: boolean; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
-type Detail = AppRow & { unsaved_commits: number; changed_files: string[] };
+type Detail = AppRow & { draft: boolean; changed_files: string[] };
 
 const TEMPLATE_DEPLOY = "https://deploy.workers.cloudflare.com/?url=https://github.com/dozokit/app-template";
 
@@ -75,6 +75,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
   const [found, setFound] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  const [owner, setOwner] = useState("");
   const gh = state.github;
 
   // GitHub only accepts the manifest as a form the owner's browser posts.
@@ -104,7 +105,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
   async function add(repo: string | null) {
     setBusy(true);
     try {
-      const app = await (repo ? call<AppRow>("/api/apps", "POST", { repo }) : call<AppRow>("/api/apps/local", "POST", { name }));
+      const app = await (repo ? call<AppRow>("/api/apps", "POST", { repo }) : call<AppRow>("/api/apps/local", "POST", { name, owner_email: owner }));
       location.hash = `#app/${app.id}`;
     } catch (e) {
       setError((e as Error).message);
@@ -168,8 +169,10 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
           <p className="muted">{t("Local mode: the app is a git repo on this computer, made from the local template, and runs here.")}</p>
           <form className="row" onSubmit={(e) => (e.preventDefault(), add(null))}>
             <input className="grow" placeholder={t("Name (lowercase, e.g. bookings)")} value={name} onChange={(e) => setName(e.target.value)} />
-            <button disabled={busy || !name}>{busy ? t("Creating…") : t("Create")}</button>
+            <input className="grow" type="email" placeholder={t("Your email (the app's owner)")} value={owner} onChange={(e) => setOwner(e.target.value)} />
+            <button disabled={busy || !name || !owner}>{busy ? t("Creating…") : t("Create")}</button>
           </form>
+          <p className="muted">{t("The emails each app sends (sign-up confirmation, password reset) are written to <app name>.log in the local repos folder.")}</p>
         </section>
       )}
 
@@ -196,10 +199,18 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
 
       <section>
         <h2 style={{ marginTop: 0 }}>{t("Build with Claude")}</h2>
-        <p>{t("In Claude: Settings → Connectors → Add custom connector, then paste this address. Claude asks you to allow it here once.")}</p>
+        {!state.local && <p>{t("In Claude: Settings → Connectors → Add custom connector, then paste this address. Claude asks you to allow it here once.")}</p>}
         <p>
           <code>{state.mcp}</code>
         </p>
+        <p>{state.local ? t("In Claude Code (claude.ai can't reach this computer):") : t("In Claude Code:")}</p>
+        <ol>
+          <li>
+            {t("In a terminal:")} <code>claude mcp add --transport http dozokit-apps {state.mcp}</code>
+          </li>
+          <li>{t("Start claude, type /mcp, pick dozokit-apps → Authenticate, then click Allow on the page that opens.")}</li>
+          <li>{t("The tools appear in Claude Code sessions started after that.")}</li>
+        </ol>
       </section>
       <p className="muted">
         Dozokit Apps {state.version} · {t("To update: on GitHub, your builder's repo → Actions → Update Dozokit Apps → Run workflow.")}
@@ -215,9 +226,10 @@ function Editor({ id }: { id: number }) {
   const [busy, setBusy] = useState(false);
   const [frame, setFrame] = useState(0);
   const [addr, setAddr] = useState<{ preview_url: string; live_url: string } | null>(null);
-  const unsaved = (app?.unsaved_commits ?? 0) > 0;
+  const unsaved = (app?.changed_files.length ?? 0) > 0;
 
-  const load = useCallback(() => call<Detail>(`/api/apps/${id}`).then(setApp).catch((e) => setError(e.message)), [id]);
+  // An app that no longer exists (an old tab): back to the list instead of asking again.
+  const load = useCallback(() => call<Detail>(`/api/apps/${id}`).then(setApp).catch((e) => (e.status === 400 ? (location.hash = "") : setError(e.message))), [id]);
   useEffect(() => {
     load();
     // Claude writes to the draft from the chat: keep the unsaved count current.
@@ -269,11 +281,18 @@ function Editor({ id }: { id: number }) {
         <button disabled={busy || !unsaved} onClick={saveIt}>{busy ? t("Saving…") : t("Save")}</button>
       </div>
       <p className={unsaved ? "" : "muted"}>
-        {unsaved ? t("{n} unsaved changes in the draft:", { n: app.unsaved_commits }) : t("Everything in the draft is live.")} {app.changed_files.join(" · ")}
+        {unsaved ? t("{n} unsaved changes in the draft:", { n: app.changed_files.length }) : t("Everything in the draft is live.")}{" "}
+        {app.changed_files.map((f) => `${t(f.split(" ")[0])} ${f.split(" ").slice(1).join(" ")}`).join(" · ")}
       </p>
       {notice && <p className="ok">{notice}</p>}
       {error && <p className="error">{error}</p>}
-      {app.preview_url ? <iframe key={frame} src={app.preview_url} title={t("Draft preview")} /> : <p className="muted">{t("No draft preview address yet: set it below.")}</p>}
+      <p className="muted">{t("Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.")}</p>
+      {!app.draft && <p>{t("No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.")}</p>}
+      {(app.draft ? app.preview_url : app.live_url) ? (
+        <iframe key={frame} src={(app.draft ? app.preview_url : app.live_url)!} title={app.draft ? t("Draft preview") : t("Live app")} />
+      ) : (
+        <p className="muted">{t("No draft preview address yet: set it below.")}</p>
+      )}
       {addr ? (
         <form className="row" onSubmit={saveAddresses}>
           <input className="grow" placeholder={t("Draft preview address")} value={addr.preview_url} onChange={(e) => setAddr({ ...addr, preview_url: e.target.value })} />

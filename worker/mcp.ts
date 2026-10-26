@@ -23,7 +23,7 @@ const TOOLS: Tool[] = [
     inputSchema: { type: "object", properties: {} },
     run: async (_a, { env, origin }) =>
       Promise.all(
-        (await listApps(env)).map(async (a) => ({ app_id: a.id, repo: a.repo, live: a.live_url, draft_preview: a.preview_url, unsaved_commits: (await status(env, a)).unsaved_commits, editor: editor(origin, a.id) })),
+        (await listApps(env)).map(async (a) => ({ app_id: a.id, repo: a.repo, live: a.live_url, draft_preview: a.preview_url, unsaved_files: (await status(env, a)).changed_files.length, editor: editor(origin, a.id) })),
       ),
   },
   {
@@ -34,7 +34,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "write_files",
-    description: "Write whole files to the app's draft branch as one commit (never to main). Cloudflare rebuilds the draft preview in about a minute; then call preview. Give each file's full new content, or delete: true to remove it.",
+    description: "Write whole files to the app's draft branch as one commit (never to main); the draft preview is then rebuilt from it. Check it with preview. Give each file's full new content, or delete: true to remove it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -51,15 +51,19 @@ const TOOLS: Tool[] = [
   },
   {
     name: "preview",
-    description: "Screenshots of the app's draft preview, desktop and phone, as the owner will see it. Call it a minute after write_files; if it still shows the old version, Cloudflare is still building: wait and call again.",
-    inputSchema: { type: "object", properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" } }, required: ["app_id"] },
+    description: "Screenshots of a page of the app's draft preview, desktop and phone. By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
+    inputSchema: {
+      type: "object",
+      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, logged_out: { type: "boolean", description: "Show the page logged out" } },
+      required: ["app_id"],
+    },
     run: async (a, { env, origin }) => {
       const app = await getApp(env, a.app_id);
       if (!app.preview_url) throw new Refused("This app has no draft preview address yet: the owner sets it in the editor.");
       if (env.LOCAL_REPOS) await gh(env, `/local/ready/${app.repo}`);
       const url = new URL(String(a.path || "/"), app.preview_url).href;
-      const s = await shots(env, url);
-      return new Seen(s.map((x) => x.image), { url, shots: s.map((x) => `${x.device}: HTTP ${x.status}`), editor: editor(origin, app.id) });
+      const s = await shots(env, url, a.logged_out !== true);
+      return new Seen(s.images, { url, logged_in_as: s.user, shots: s.devices, try_it_yourself: app.preview_url, editor: editor(origin, app.id) });
     },
   },
   {

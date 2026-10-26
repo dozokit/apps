@@ -17,6 +17,8 @@ function initial(): Lang {
 
 export const lang: Lang = initial();
 document.documentElement.lang = lang;
+// The server draws a few pages itself (connecting Claude): it reads the same choice from a cookie.
+document.cookie = `${KEY}=${lang}; Path=/; Max-Age=31536000; SameSite=Lax`;
 
 export function setLang(l: Lang) {
   try {

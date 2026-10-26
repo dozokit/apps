@@ -41,7 +41,11 @@ export async function register(req: Request, env: Env) {
 }
 
 // These pages are drawn here, not by the admin app: French when the browser asks for it.
-const fr = (req: Request) => /^fr\b/i.test(req.headers.get("accept-language") ?? "");
+// The builder's own language choice (a cookie the admin page sets) first, then the browser's.
+const fr = (req: Request) => {
+  const chosen = (req.headers.get("cookie") ?? "").match(/(?:^|;\s*)dozokit_lang=(en|fr)/)?.[1];
+  return chosen ? chosen === "fr" : /^fr\b/i.test(req.headers.get("accept-language") ?? "");
+};
 const page = (title: string, body: string, l: "en" | "fr" = "en") =>
   new Response(
     `<!doctype html><html lang="${l}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title>` +

@@ -52,6 +52,26 @@ export const FR: Record<string, string> = {
   "Name (lowercase, e.g. bookings)": "Nom (minuscules, ex. rendez-vous)",
   "Creating…": "Création…",
   Create: "Créer",
+  "Your email (the app's owner)": "Votre e-mail (propriétaire de l’app)",
+  "The emails each app sends (sign-up confirmation, password reset) are written to <app name>.log in the local repos folder.":
+    "Les e-mails envoyés par chaque app (confirmation d’inscription, mot de passe oublié) sont écrits dans <nom de l’app>.log, dans le dossier des dépôts locaux.",
+  "In Claude Code (claude.ai can't reach this computer):": "Dans Claude Code (claude.ai ne peut pas joindre cet ordinateur) :",
+  "In Claude Code:": "Dans Claude Code :",
+  "In a terminal:": "Dans un terminal :",
+  "Start claude, type /mcp, pick dozokit-apps → Authenticate, then click Allow on the page that opens.":
+    "Lancez claude, tapez /mcp, choisissez dozokit-apps → Authenticate, puis cliquez sur Autoriser dans la page qui s’ouvre.",
+  "The tools appear in Claude Code sessions started after that.": "Les outils apparaissent dans les sessions Claude Code lancées ensuite.",
+  "Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.":
+    "L’app en ligne et le brouillon ont des bases de données séparées : les comptes et données créés sur l’aperçu du brouillon ne sont pas dans l’app en ligne.",
+  "No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.":
+    "Pas encore de brouillon : demandez un changement à Claude et l’aperçu du brouillon apparaîtra ici. En attendant, voici l’app en ligne.",
+  added: "ajouté",
+  modified: "modifié",
+  removed: "supprimé",
+  renamed: "renommé",
+  "Give the owner's email: that account becomes the app's owner once the email is confirmed.":
+    "Indiquez l’e-mail du propriétaire : ce compte devient propriétaire de l’app une fois l’e-mail confirmé.",
+  "Pick a new name: lowercase letters, digits and dashes.": "Choisissez un nouveau nom : minuscules, chiffres et tirets.",
   // From the server
   "That password is not the one set for this builder.": "Ce n’est pas le mot de passe de ce builder.",
   "Too many attempts. Wait a minute, then try again.": "Trop d’essais. Attendez une minute, puis réessayez.",

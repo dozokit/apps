@@ -4,7 +4,7 @@
 // the draft branch on the next (preview), rebuilt after every change. It also starts the builder.
 // Start: npm run dev:local
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, openSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ const ROOT = vars.LOCAL_REPOS?.replace(/^~/, homedir());
 const TEMPLATE = (vars.LOCAL_TEMPLATE ?? "~/dev/dozokit-apps").replace(/^~/, homedir());
 if (!ROOT || !existsSync(ROOT)) throw new Error("Set LOCAL_REPOS in .dev.vars to an existing folder.");
 
-const git = (dir, args, input) => execFileSync("git", ["-C", dir, ...args], { input, encoding: input instanceof Buffer ? undefined : "utf8", maxBuffer: 64 << 20 });
+const git = (dir, args, input) => execFileSync("git", ["-C", dir, ...args], { input, encoding: input instanceof Buffer ? undefined : "utf8", maxBuffer: 64 << 20, stdio: "pipe" });
 const gitOk = (dir, args) => { try { return git(dir, args).trim(); } catch { return null; } };
 const names = () => readdirSync(ROOT).filter((n) => !n.endsWith(".draft") && existsSync(join(ROOT, n, ".git"))).sort();
 // Each app keeps its ports for good: live on an even port from 8800, its draft on the next one.
@@ -46,7 +46,9 @@ function run(name, draft) {
     const p = port(name, draft);
     stop(previous);
     while (await fetch(`http://localhost:${p}/`).then(() => true, () => false)) await new Promise((r) => setTimeout(r, 300));
-    entry.proc = spawn("npx", ["wrangler", "dev", "--port", String(p), "--inspector-port", String(p + 1000)], { cwd: dir, stdio: "ignore", detached: true });
+    // The app's log, where its emails land locally (sign-up confirmation, password reset).
+    const log = openSync(join(ROOT, `${key}.log`), "a");
+    entry.proc = spawn("npx", ["wrangler", "dev", "--port", String(p), "--inspector-port", String(p + 1000)], { cwd: dir, stdio: ["ignore", log, log], detached: true });
     for (let i = 0; i < 60; i++) {
       if (await fetch(`http://localhost:${p}/`).then(() => true, () => false)) return `http://localhost:${p}`;
       await new Promise((r) => setTimeout(r, 1000));
@@ -70,12 +72,13 @@ async function answer(method, path, body) {
   if (method === "POST" && path === "/local/new") {
     const name = String(body.name ?? "").toLowerCase();
     if (!/^[a-z][a-z0-9-]{1,40}$/.test(name) || existsSync(join(ROOT, name))) return [400, { message: "Pick a new name: lowercase letters, digits and dashes." }];
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.owner_email ?? "")) return [400, { message: "Give the owner's email: that account becomes the app's owner once the email is confirmed." }];
     execFileSync("git", ["clone", "-q", "--branch", "main", TEMPLATE, join(ROOT, name)]);
     git(join(ROOT, name), ["remote", "remove", "origin"]);
     const wrangler = join(ROOT, name, "wrangler.jsonc");
     writeFileSync(wrangler, readFileSync(wrangler, "utf8").replace(/"name":\s*"[^"]+"/, `"name": "${name}"`));
     git(join(ROOT, name), ["commit", "-qam", `New app ${name}`]);
-    writeFileSync(join(ROOT, name, ".dev.vars"), `BETTER_AUTH_SECRET=${b64(crypto.getRandomValues(new Uint8Array(32)))}\n`);
+    writeFileSync(join(ROOT, name, ".dev.vars"), `BETTER_AUTH_SECRET=${b64(crypto.getRandomValues(new Uint8Array(32)))}\nOWNER_EMAIL=${body.owner_email}\n`);
     run(name, false);
     return { repo: `local/${name}` };
   }
@@ -83,7 +86,9 @@ async function answer(method, path, body) {
   if (!m || !names().includes(m[2])) return [404, { message: "Not Found" }];
   const [, local, name, rest = ""] = m;
   const dir = join(ROOT, name);
-  if (local === "urls") return { preview_url: `http://localhost:${port(name, true)}`, live_url: `http://localhost:${port(name, false)}` };
+  // The draft on its own hostname: browsers keep cookies per host, not per port, so logging in on
+  // one doesn't log you out of the other (on Cloudflare they're different hosts anyway).
+  if (local === "urls") return { preview_url: `http://draft.localhost:${port(name, true)}`, live_url: `http://localhost:${port(name, false)}` };
   if (local === "ready") {
     if (!servers[`${name}.draft`]) return [409, { message: "No draft preview yet: write_files first." }];
     return { url: await servers[`${name}.draft`].ready.catch((e) => { throw Object.assign(e, { status: 422 }); }) };

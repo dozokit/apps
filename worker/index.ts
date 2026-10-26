@@ -26,12 +26,12 @@ async function api(req: Request, env: Env, url: URL, path: string) {
   }
   if (path === "/api/github/start" && req.method === "POST") return start(env, url.origin);
   if (path === "/api/candidates") return candidates(env);
-  if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, url.origin);
+  if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, body.owner_email, url.origin);
   if (path === "/api/apps" && req.method === "POST") return addApp(env, String(body.repo ?? ""), url.origin);
   if (app && !app[2] && req.method === "GET") {
     const a = await getApp(env, app[1]);
     const s = await status(env, a);
-    return { ...a, unsaved_commits: s.unsaved_commits, changed_files: s.changed_files };
+    return { ...a, draft: s.draft, changed_files: s.changed_files };
   }
   if (app && !app[2] && req.method === "PUT") return setAddresses(env, await getApp(env, app[1]), body).then(() => ({ ok: true }));
   if (app?.[2] === "/save" && req.method === "POST") return save(env, await getApp(env, app[1]));
