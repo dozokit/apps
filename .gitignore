@@ -1,0 +1,7 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+QA.md
+qa/
+.live-password

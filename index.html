@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Dozokit Apps</title>
+    <style>
+      :root { --paper: #f6f1ec; --ink: #2a2421; --muted: #6b625c; --line: #ddd3ca; --bad: #a3261b; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+      main { max-width: 46rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+      main.wide { max-width: none; padding: 1rem; }
+      h1 { font-size: 1.5rem; margin: 0 0 1rem; } h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
+      section { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.25rem; margin: 1rem 0; }
+      input, button { font: inherit; padding: .5rem .8rem; border-radius: 8px; border: 1px solid var(--ink); }
+      input { background: #fff; min-width: 0; }
+      button, .btn { background: var(--ink); color: #fff; border: 1px solid var(--ink); cursor: pointer; text-decoration: none; display: inline-block; padding: .5rem .9rem; border-radius: 8px; }
+      button.line { background: none; color: var(--ink); }
+      button:disabled { opacity: .45; cursor: default; }
+      .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+      .grow { flex: 1; }
+      .muted { color: var(--muted); font-size: .95rem; } .error { color: var(--bad); white-space: pre-wrap; } .ok { color: #1f6b3a; }
+      ul.apps { list-style: none; padding: 0; margin: 0; } ul.apps li { padding: .6rem 0; border-top: 1px solid var(--line); } ul.apps li:first-child { border-top: 0; }
+      code { background: #efe7df; padding: .1rem .3rem; border-radius: 4px; word-break: break-all; }
+      iframe { width: 100%; height: calc(100vh - 13rem); min-height: 24rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

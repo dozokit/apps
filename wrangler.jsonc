@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dozokit-apps",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  // The admin page is static; the Worker answers its API, GitHub's redirects, OAuth and /mcp first.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/github/*", "/oauth/*", "/.well-known/*", "/mcp"]
+  },
+  // No id: the Deploy button creates the database.
+  "d1_databases": [{ "binding": "DB", "database_name": "dozokit-apps", "migrations_dir": "migrations" }],
+  // A headless browser, so Claude sees the draft preview (free plan: 10 minutes a day).
+  "browser": { "binding": "BROWSER" },
+  // namespace_id only has to be unique in your Cloudflare account: change it if it clashes.
+  "ratelimits": [{ "name": "LOGIN_LIMIT", "namespace_id": "7421", "simple": { "limit": 5, "period": 60 } }],
+  "observability": { "enabled": true }
+}
