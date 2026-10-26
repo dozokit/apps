@@ -25,4 +25,6 @@ npm install
 npm run dev                      # http://localhost:8788
 ```
 
+To try it without GitHub or Cloudflare: add `LOCAL_REPOS=<an empty folder>` to `.dev.vars` and run `npm run dev:local` instead. Apps are then git repos in that folder, made from a local copy of dozokit/app-template, each running on this computer.
+
 Part of [Dozokit](https://dozokit.com): free tools you host yourself.

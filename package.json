@@ -4,7 +4,8 @@
     "build": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && vite build",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "dev": "npm run build && npm run db:migrate && wrangler dev --port 8788",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "dev:local": "node scripts/local-repos.mjs"
   },
   "license": "AGPL-3.0-only",
   "dependencies": {

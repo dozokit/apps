@@ -1,4 +1,4 @@
-import { addApp, candidates, getApp, listApps, save, setAddresses, status } from "./apps";
+import { addApp, candidates, getApp, listApps, newLocalApp, save, setAddresses, status } from "./apps";
 import { login, logout, setupNeeded, signedIn } from "./auth";
 import { callback, githubApp, installed, Refused, start } from "./github";
 import { mcp } from "./mcp";
@@ -12,6 +12,7 @@ export interface Env {
   PASSWORD?: string;
   LOGIN_LIMIT?: RateLimit;
   DEV_GITHUB_TOKEN?: string;
+  LOCAL_REPOS?: string;
 }
 
 // The owner's admin API, behind the password.
@@ -20,10 +21,12 @@ async function api(req: Request, env: Env, url: URL, path: string) {
   const app = path.match(/^\/api\/apps\/(\d+)(\/\w+)?$/);
   if (path === "/api/state") {
     const gh = await githubApp(env);
-    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : env.DEV_GITHUB_TOKEN ? { app: "local token", installed: true } : null, apps: await listApps(env), mcp: `${url.origin}/mcp` };
+    const dev = env.LOCAL_REPOS ? "local repos" : env.DEV_GITHUB_TOKEN ? "local token" : null;
+    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), apps: await listApps(env), mcp: `${url.origin}/mcp` };
   }
   if (path === "/api/github/start" && req.method === "POST") return start(env, url.origin);
   if (path === "/api/candidates") return candidates(env);
+  if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, url.origin);
   if (path === "/api/apps" && req.method === "POST") return addApp(env, String(body.repo ?? ""), url.origin);
   if (app && !app[2] && req.method === "GET") {
     const a = await getApp(env, app[1]);
@@ -39,6 +42,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+    if (env.LOCAL_REPOS && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) return new Response("LOCAL_REPOS is for local development only: remove it.", { status: 500 });
 
     // Chat apps (Claude): OAuth discovery, registration, approval, tokens, then MCP.
     if (path.startsWith("/.well-known/oauth-")) return metadata(url);

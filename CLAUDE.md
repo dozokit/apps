@@ -10,4 +10,6 @@ The owner's app builder: password login, a GitHub App made in the owner's accoun
 
 Rules: free Cloudflare plans only. The builder writes only to repos made from the template (checked at every write), never to `.github`, never outside the app's repo, never to `main` except through Save. Bump `worker/version.ts` for a release; releases are signed tags.
 
+Local mode, no GitHub at all: set `LOCAL_REPOS=<folder>` in `.dev.vars` and run `npm run dev:local`. `scripts/local-repos.mjs` answers the builder's GitHub calls with git on folders there (New app clones the local template, `LOCAL_TEMPLATE`, default `~/dev/dozokit-apps`) and runs each app's `wrangler dev`: live (main) on an even port from 8800, its draft on the next. Any request not on localhost is refused while `LOCAL_REPOS` is set.
+
 Local GitHub testing without the GitHub App: `wrangler dev --var DEV_GITHUB_TOKEN:$(gh auth token)`. Never set it online.

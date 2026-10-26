@@ -6,6 +6,8 @@ import type { Env } from "./index";
 // write repo contents (Contents, Metadata), on the repos the owner picks when installing it.
 
 const API = "https://api.github.com";
+// Local mode (LOCAL_REPOS in .dev.vars): scripts/local-repos.mjs answers instead of GitHub.
+const LOCAL = "http://localhost:8790";
 
 // A refusal or failure meant for the owner or the chat: its message is shown as it is.
 export class Refused extends Error {}
@@ -15,13 +17,13 @@ type GitHubApp = { app_id: number; slug: string; client_id: string; pem: string;
 export const githubApp = (env: Env) => env.DB.prepare("select app_id, slug, client_id, pem, html_url, installation_id from github_app where id = 1").first<GitHubApp>();
 
 async function call(token: string, path: string, init: RequestInit = {}) {
-  const res = await fetch(path.startsWith("https://") ? path : API + path, {
+  const res = await fetch(/^https?:\/\//.test(path) ? path : API + path, {
     ...init,
     headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "dozokit-apps", ...(init.body ? { "content-type": "application/json" } : {}) },
   });
   if (res.status === 204) return null;
   const body = (await res.json().catch(() => ({}))) as { message?: string };
-  if (!res.ok) throw Object.assign(new Refused(`GitHub said ${res.status}: ${body.message ?? "no reason given"} (${path.split("?")[0]})`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Refused(`${path.startsWith(LOCAL) ? "Local repos" : "GitHub"} said ${res.status}: ${body.message ?? "no reason given"} (${path.split("?")[0]})`), { status: res.status });
   return body;
 }
 
@@ -52,6 +54,7 @@ export async function appJwt(pem: string, issuer: string) {
 let cached: { token: string; until: number } | null = null;
 
 async function token(env: Env) {
+  if (env.LOCAL_REPOS) return "local";
   // Local development only: a token of your own instead of the GitHub App (never set it online).
   if (env.DEV_GITHUB_TOKEN) return env.DEV_GITHUB_TOKEN;
   if (cached && cached.until > Date.now()) return cached.token;
@@ -62,12 +65,12 @@ async function token(env: Env) {
   return out.token;
 }
 
-export const gh = async <T = Record<string, unknown>>(env: Env, path: string, init?: RequestInit) => (await call(await token(env), path, init)) as T;
+export const gh = async <T = Record<string, unknown>>(env: Env, path: string, init?: RequestInit) => (await call(await token(env), env.LOCAL_REPOS ? LOCAL + path : path, init)) as T;
 
 // Every repo the builder may reach: the ones the owner gave the GitHub App when installing it.
 export async function reachableRepos(env: Env) {
   type Repo = { full_name: string; default_branch: string };
-  if (env.DEV_GITHUB_TOKEN) return gh<Repo[]>(env, "/user/repos?affiliation=owner&per_page=100&sort=updated");
+  if (env.DEV_GITHUB_TOKEN || env.LOCAL_REPOS) return gh<Repo[]>(env, "/user/repos?affiliation=owner&per_page=100&sort=updated");
   return (await gh<{ repositories: Repo[] }>(env, "/installation/repositories?per_page=100")).repositories;
 }
 

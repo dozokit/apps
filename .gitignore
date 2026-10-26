@@ -5,3 +5,4 @@ dist
 QA.md
 qa/
 .live-password
+.local-repos/

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { lang, setLang, t, tr } from "./lib/i18n";
 
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
-type State = { version: string; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
+type State = { version: string; local: boolean; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
 type Detail = AppRow & { unsaved_commits: number; changed_files: string[] };
 
 const TEMPLATE_DEPLOY = "https://deploy.workers.cloudflare.com/?url=https://github.com/dozokit/app-template";
@@ -74,6 +74,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
   const [error, setError] = useState(q.get("error") ? tr(q.get("error")!) : "");
   const [found, setFound] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState("");
   const gh = state.github;
 
   // GitHub only accepts the manifest as a form the owner's browser posts.
@@ -100,10 +101,10 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
     }
     setBusy(false);
   }
-  async function add(repo: string) {
+  async function add(repo: string | null) {
     setBusy(true);
     try {
-      const app = await call<AppRow>("/api/apps", "POST", { repo });
+      const app = await (repo ? call<AppRow>("/api/apps", "POST", { repo }) : call<AppRow>("/api/apps/local", "POST", { name }));
       location.hash = `#app/${app.id}`;
     } catch (e) {
       setError((e as Error).message);
@@ -161,7 +162,18 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
         )}
       </section>
 
-      {gh?.installed && (
+      {state.local && (
+        <section>
+          <h2 style={{ marginTop: 0 }}>{t("New app")}</h2>
+          <p className="muted">{t("Local mode: the app is a git repo on this computer, made from the local template, and runs here.")}</p>
+          <form className="row" onSubmit={(e) => (e.preventDefault(), add(null))}>
+            <input className="grow" placeholder={t("Name (lowercase, e.g. bookings)")} value={name} onChange={(e) => setName(e.target.value)} />
+            <button disabled={busy || !name}>{busy ? t("Creating…") : t("Create")}</button>
+          </form>
+        </section>
+      )}
+
+      {gh?.installed && !state.local && (
         <section>
           <h2 style={{ marginTop: 0 }}>{t("New app")}</h2>
           <p>

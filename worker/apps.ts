@@ -47,8 +47,15 @@ export async function addApp(env: Env, repo: string, origin: string) {
   const worker = (await appRepo(env, repo))!;
   // On workers.dev, the app lives next to the builder: <worker>.<subdomain>.workers.dev, its draft at draft-<worker>.
   const sub = new URL(origin).hostname.match(/^[^.]+\.([^.]+)\.workers\.dev$/)?.[1];
-  const [preview, live] = sub ? [`https://draft-${worker}.${sub}.workers.dev`, `https://${worker}.${sub}.workers.dev`] : [null, null];
+  const local = env.LOCAL_REPOS ? await gh<{ preview_url: string; live_url: string }>(env, `/local/urls/${repo}`) : null;
+  const [preview, live] = local ? [local.preview_url, local.live_url] : sub ? [`https://draft-${worker}.${sub}.workers.dev`, `https://${worker}.${sub}.workers.dev`] : [null, null];
   return env.DB.prepare("insert into apps (repo, worker, preview_url, live_url, created_at) values (?, ?, ?, ?, ?) returning *").bind(repo, worker, preview, live, Date.now()).first<App>();
+}
+
+// Local mode: New app makes a git repo from the local template instead of the Deploy button.
+export async function newLocalApp(env: Env, name: unknown, origin: string) {
+  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name }) });
+  return addApp(env, repo, origin);
 }
 
 export async function setAddresses(env: Env, app: App, body: { preview_url?: unknown; live_url?: unknown }) {

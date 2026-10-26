@@ -48,6 +48,10 @@ export const FR: Record<string, string> = {
   "Save addresses": "Enregistrer les adresses",
   "Draft preview: {url}": "Aperçu du brouillon : {url}",
   Change: "Modifier",
+  "Local mode: the app is a git repo on this computer, made from the local template, and runs here.": "Mode local : l’app est un dépôt git sur cet ordinateur, créé depuis le modèle local, et tourne ici.",
+  "Name (lowercase, e.g. bookings)": "Nom (minuscules, ex. rendez-vous)",
+  "Creating…": "Création…",
+  Create: "Créer",
   // From the server
   "That password is not the one set for this builder.": "Ce n’est pas le mot de passe de ce builder.",
   "Too many attempts. Wait a minute, then try again.": "Trop d’essais. Attendez une minute, puis réessayez.",

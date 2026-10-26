@@ -1,5 +1,5 @@
 import { getApp, listApps, readFile, save, status, writeFiles } from "./apps";
-import { Refused } from "./github";
+import { gh, Refused } from "./github";
 import type { Env } from "./index";
 import { shots } from "./shot";
 
@@ -56,6 +56,7 @@ const TOOLS: Tool[] = [
     run: async (a, { env, origin }) => {
       const app = await getApp(env, a.app_id);
       if (!app.preview_url) throw new Refused("This app has no draft preview address yet: the owner sets it in the editor.");
+      if (env.LOCAL_REPOS) await gh(env, `/local/ready/${app.repo}`);
       const url = new URL(String(a.path || "/"), app.preview_url).href;
       const s = await shots(env, url);
       return new Seen(s.map((x) => x.image), { url, shots: s.map((x) => `${x.device}: HTTP ${x.status}`), editor: editor(origin, app.id) });
