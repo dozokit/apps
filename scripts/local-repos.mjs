@@ -82,12 +82,20 @@ async function answer(method, path, body) {
     run(name, false);
     return { repo: `local/${name}` };
   }
-  const m = path.match(/^\/(?:repos|local\/(urls|ready))\/local\/([a-z0-9-]+)(\/.*)?$/);
+  const m = path.match(/^\/(?:repos|local\/(urls|ready|mail))\/local\/([a-z0-9-]+)(\/.*)?$/);
   if (!m || !names().includes(m[2])) return [404, { message: "Not Found" }];
   const [, local, name, rest = ""] = m;
   const dir = join(ROOT, name);
   // The draft on its own hostname: browsers keep cookies per host, not per port, so logging in on
   // one doesn't log you out of the other (on Cloudflare they're different hosts anyway).
+  // Where this app's emails land, and the latest link that confirms the owner's email.
+  if (local === "mail") {
+    const log = join(ROOT, `${name}.log`);
+    const owner = readFileSync(join(dir, ".dev.vars"), "utf8").match(/^OWNER_EMAIL=(.*)$/m)?.[1];
+    const text = existsSync(log) ? readFileSync(log, "utf8") : "";
+    const link = [...text.matchAll(/\[email stub\] to=(\S+) subject="Confirm your email"\n.*?(http\S+)/g)].filter((m) => m[1] === owner).pop()?.[2] ?? null;
+    return { log, owner, owner_link: link };
+  }
   if (local === "urls") return { preview_url: `http://draft.localhost:${port(name, true)}`, live_url: `http://localhost:${port(name, false)}` };
   if (local === "ready") {
     if (!servers[`${name}.draft`]) return [409, { message: "No draft preview yet: write_files first." }];

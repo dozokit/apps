@@ -1,6 +1,6 @@
 import { addApp, candidates, getApp, listApps, newLocalApp, save, setAddresses, status } from "./apps";
 import { login, logout, setupNeeded, signedIn } from "./auth";
-import { callback, githubApp, installed, Refused, start } from "./github";
+import { callback, gh, githubApp, installed, Refused, start } from "./github";
 import { mcp } from "./mcp";
 import { authorize, bearer, metadata, register, token, unauthorized } from "./oauth";
 import { VERSION } from "./version";
@@ -31,7 +31,8 @@ async function api(req: Request, env: Env, url: URL, path: string) {
   if (app && !app[2] && req.method === "GET") {
     const a = await getApp(env, app[1]);
     const s = await status(env, a);
-    return { ...a, draft: s.draft, changed_files: s.changed_files };
+    const mail = env.LOCAL_REPOS ? await gh(env, `/local/mail/${a.repo}`) : null;
+    return { ...a, draft: s.draft, changed_files: s.changed_files, local_mail: mail };
   }
   if (app && !app[2] && req.method === "PUT") return setAddresses(env, await getApp(env, app[1]), body).then(() => ({ ok: true }));
   if (app?.[2] === "/save" && req.method === "POST") return save(env, await getApp(env, app[1]));

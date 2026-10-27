@@ -60,11 +60,20 @@ export const FR: Record<string, string> = {
   "In a terminal:": "Dans un terminal :",
   "Start claude, type /mcp, pick dozokit-apps → Authenticate, then click Allow on the page that opens.":
     "Lancez claude, tapez /mcp, choisissez dozokit-apps → Authenticate, puis cliquez sur Autoriser dans la page qui s’ouvre.",
-  "The tools appear in Claude Code sessions started after that.": "Les outils apparaissent dans les sessions Claude Code lancées ensuite.",
+  
   "Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.":
     "L’app en ligne et le brouillon ont des bases de données séparées : les comptes et données créés sur l’aperçu du brouillon ne sont pas dans l’app en ligne.",
   "No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.":
     "Pas encore de brouillon : demandez un changement à Claude et l’aperçu du brouillon apparaîtra ici. En attendant, voici l’app en ligne.",
+  "Sign up in your app with this email and confirm it to get the owner views.": "Inscrivez-vous dans votre app avec cet e-mail et confirmez-le pour avoir les vues propriétaire.",
+  "(from any folder: -s user makes it available everywhere)": "(depuis n’importe quel dossier : -s user le rend disponible partout)",
+  "The tools only appear in a new claude session, started after Authenticate.": "Les outils n’apparaissent que dans une nouvelle session claude, lancée après Authenticate.",
+  "Other clients and agents: it's MCP over HTTP with standard OAuth (discovery at /.well-known/oauth-authorization-server, dynamic client registration, PKCE S256), then JSON-RPC POSTs to this address with the bearer token.":
+    "Autres clients et agents : c’est du MCP sur HTTP avec un OAuth standard (découverte sur /.well-known/oauth-authorization-server, enregistrement dynamique du client, PKCE S256), puis des POST JSON-RPC sur cette adresse avec le jeton.",
+  "Saved. Live at {url}": "Enregistré. En ligne sur {url}",
+  "This app's emails (sign-up confirmation, password reset) are written to {log}.": "Les e-mails de cette app (confirmation d’inscription, mot de passe oublié) sont écrits dans {log}.",
+  "Latest link to confirm {owner}:": "Dernier lien pour confirmer {owner} :",
+  "No confirmation email for {owner} yet: sign up with it in the live app.": "Pas encore d’e-mail de confirmation pour {owner} : inscrivez-vous avec dans l’app en ligne.",
   added: "ajouté",
   modified: "modifié",
   removed: "supprimé",

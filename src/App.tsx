@@ -3,7 +3,7 @@ import { lang, setLang, t, tr } from "./lib/i18n";
 
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
 type State = { version: string; local: boolean; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
-type Detail = AppRow & { draft: boolean; changed_files: string[] };
+type Detail = AppRow & { draft: boolean; changed_files: string[]; local_mail: { log: string; owner: string; owner_link: string | null } | null };
 
 const TEMPLATE_DEPLOY = "https://deploy.workers.cloudflare.com/?url=https://github.com/dozokit/app-template";
 
@@ -172,6 +172,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
             <input className="grow" type="email" placeholder={t("Your email (the app's owner)")} value={owner} onChange={(e) => setOwner(e.target.value)} />
             <button disabled={busy || !name || !owner}>{busy ? t("Creating…") : t("Create")}</button>
           </form>
+          <p className="muted">{t("Sign up in your app with this email and confirm it to get the owner views.")}</p>
           <p className="muted">{t("The emails each app sends (sign-up confirmation, password reset) are written to <app name>.log in the local repos folder.")}</p>
         </section>
       )}
@@ -206,11 +207,12 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
         <p>{state.local ? t("In Claude Code (claude.ai can't reach this computer):") : t("In Claude Code:")}</p>
         <ol>
           <li>
-            {t("In a terminal:")} <code>claude mcp add --transport http dozokit-apps {state.mcp}</code>
+            {t("In a terminal:")} <code>claude mcp add -s user --transport http dozokit-apps {state.mcp}</code> {t("(from any folder: -s user makes it available everywhere)")}
           </li>
           <li>{t("Start claude, type /mcp, pick dozokit-apps → Authenticate, then click Allow on the page that opens.")}</li>
-          <li>{t("The tools appear in Claude Code sessions started after that.")}</li>
+          <li>{t("The tools only appear in a new claude session, started after Authenticate.")}</li>
         </ol>
+        <p className="muted">{t("Other clients and agents: it's MCP over HTTP with standard OAuth (discovery at /.well-known/oauth-authorization-server, dynamic client registration, PKCE S256), then JSON-RPC POSTs to this address with the bearer token.")}</p>
       </section>
       <p className="muted">
         Dozokit Apps {state.version} · {t("To update: on GitHub, your builder's repo → Actions → Update Dozokit Apps → Run workflow.")}
@@ -251,7 +253,7 @@ function Editor({ id }: { id: number }) {
     setNotice("");
     try {
       await call(`/api/apps/${id}/save`, "POST");
-      setNotice(t("Saved. Cloudflare is building it; the live app updates in about a minute."));
+      setNotice(app?.local_mail ? t("Saved. Live at {url}", { url: app.live_url ?? "" }) : t("Saved. Cloudflare is building it; the live app updates in about a minute."));
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -286,6 +288,18 @@ function Editor({ id }: { id: number }) {
       </p>
       {notice && <p className="ok">{notice}</p>}
       {error && <p className="error">{error}</p>}
+      {app.local_mail && (
+        <p className="muted">
+          {t("This app's emails (sign-up confirmation, password reset) are written to {log}.", { log: app.local_mail.log })}{" "}
+          {app.local_mail.owner_link ? (
+            <>
+              {t("Latest link to confirm {owner}:", { owner: app.local_mail.owner })} <a href={app.local_mail.owner_link} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{app.local_mail.owner_link}</a>
+            </>
+          ) : (
+            t("No confirmation email for {owner} yet: sign up with it in the live app.", { owner: app.local_mail.owner })
+          )}
+        </p>
+      )}
       <p className="muted">{t("Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.")}</p>
       {!app.draft && <p>{t("No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.")}</p>}
       {(app.draft ? app.preview_url : app.live_url) ? (

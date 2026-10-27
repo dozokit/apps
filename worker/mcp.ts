@@ -51,19 +51,19 @@ const TOOLS: Tool[] = [
   },
   {
     name: "preview",
-    description: "Screenshots of a page of the app's draft preview, desktop and phone. By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
+    description: "Screenshots only, no clicks or typing: pages of the app's draft preview, desktop and phone, up to 4 pages per call. To check what a click does (book, cancel, a rule between two users), try it on the draft address yourself, e.g. with its API. By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
     inputSchema: {
       type: "object",
-      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, logged_out: { type: "boolean", description: "Show the page logged out" } },
+      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, paths: { type: "array", items: { type: "string" }, description: "Several pages at once, e.g. [\"/\", \"/admin\"] (up to 4)" }, logged_out: { type: "boolean", description: "Show the page logged out" } },
       required: ["app_id"],
     },
     run: async (a, { env, origin }) => {
       const app = await getApp(env, a.app_id);
       if (!app.preview_url) throw new Refused("This app has no draft preview address yet: the owner sets it in the editor.");
       if (env.LOCAL_REPOS) await gh(env, `/local/ready/${app.repo}`);
-      const url = new URL(String(a.path || "/"), app.preview_url).href;
-      const s = await shots(env, url, a.logged_out !== true);
-      return new Seen(s.images, { url, logged_in_as: s.user, shots: s.devices, try_it_yourself: app.preview_url, editor: editor(origin, app.id) });
+      const paths = Array.isArray(a.paths) && a.paths.length ? a.paths.slice(0, 4).map(String) : [String(a.path || "/")];
+      const s = await shots(env, paths.map((p) => new URL(p, app.preview_url!).href), a.logged_out !== true);
+      return new Seen(s.images, { logged_in_as: s.user, shots: s.shots, try_it_yourself: app.preview_url, editor: editor(origin, app.id) });
     },
   },
   {
