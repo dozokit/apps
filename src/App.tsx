@@ -3,8 +3,9 @@ import { lang, setLang, t, tr } from "./lib/i18n";
 
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
 type Theme = { name: string; paper: string; ink: string; accent: string; "font-head": string };
-type State = { version: string; local: boolean; themes: Theme[]; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
-type Mail = { owner: string; log: string; owner_link: string | null; draft_log: string; draft_owner_link: string | null };
+type Usage = { requests: number; rows_read?: number; rows_written?: number; d1_queries?: number; emails: number; local: boolean; limits: Record<string, number> };
+type State = { version: string; local: boolean; cloudflare: boolean; themes: Theme[]; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
+type Mail = { owner: string; log: string; owner_code: string | null; draft_log: string; draft_owner_code: string | null };
 type Detail = AppRow & { draft: boolean; changed_files: string[]; local_mail: Mail | null };
 type AgentToken = { hash: string; created_at: number; expires_at: number };
 
@@ -192,8 +193,8 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
             <input className="grow" type="email" placeholder={t("Your email (the app's owner)")} value={owner} onChange={(e) => setOwner(e.target.value)} />
             <button disabled={busy || !name || !owner}>{busy ? t("Creating…") : t("Create")}</button>
           </form>
-          <p className="muted">{t("Sign up in your app with this email and confirm it to get the owner views.")}</p>
-          <p className="muted">{t("The emails each app sends (sign-up confirmation, password reset) are written to <app name>.log in the local repos folder.")}</p>
+          <p className="muted">{t("Sign in to your app with this email (by code or Google) to get the owner views.")}</p>
+          <p className="muted">{t("The emails each app sends (sign-in codes) are written to <app name>.log in the local repos folder, and shown on its page here.")}</p>
         </section>
       )}
 
@@ -218,6 +219,8 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
           ))}
         </section>
       )}
+
+      {!state.local && <CloudflareToken connected={state.cloudflare} reload={reload} />}
 
       <section>
         <h2 style={{ marginTop: 0 }}>{t("Build with Claude")}</h2>
@@ -311,19 +314,19 @@ function Editor({ id }: { id: number }) {
       {notice && <p className="ok">{notice}</p>}
       {error && <p className="error">{error}</p>}
       {app.local_mail &&
-        ([[t("Live app"), app.local_mail.log, app.local_mail.owner_link], [t("Draft preview"), app.local_mail.draft_log, app.local_mail.draft_owner_link]] as const).map(([which, log, link]) => (
+        ([[t("Live app"), app.local_mail.log, app.local_mail.owner_code], [t("Draft preview"), app.local_mail.draft_log, app.local_mail.draft_owner_code]] as const).map(([which, log, link]) => (
           <p key={log} className="muted">
-            {which} : {t("emails (sign-up confirmation, password reset) are written to {log}.", { log })}{" "}
+            {which} : {t("emails (sign-in codes) are written to {log}.", { log })}{" "}
             {link ? (
               <>
-                {t("Latest link to confirm {owner}:", { owner: app.local_mail!.owner })}{" "}
-                <a href={link} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{link}</a>
+                {t("Latest sign-in code for {owner}:", { owner: app.local_mail!.owner })} <strong>{link}</strong> {t("(works for 5 minutes)")}
               </>
             ) : (
-              t("No confirmation email for {owner} here yet.", { owner: app.local_mail!.owner })
+              t("No sign-in code for {owner} here yet.", { owner: app.local_mail!.owner })
             )}
           </p>
         ))}
+      <UsagePanel id={id} />
       <p className="muted">{t("Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.")}</p>
       {!app.draft && <p>{t("No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.")}</p>}
       {(app.draft ? app.preview_url : app.live_url) ? (
@@ -394,5 +397,69 @@ function AgentTokens({ mcp }: { mcp: string }) {
         </ul>
       )}
     </>
+  );
+}
+
+// Today's use of the live app against the free plan's daily limits (UTC day), amber from 80%.
+function UsagePanel({ id }: { id: number }) {
+  const [u, setU] = useState<Usage | null>(null);
+  useEffect(() => {
+    const load = () => call<Usage | null>(`/api/apps/${id}/usage`).then(setU).catch(() => setU(null));
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => clearInterval(timer);
+  }, [id]);
+  if (!u) return <p className="muted">{t("Usage today: connect your Cloudflare account on the home page to see it.")}</p>;
+  const rows: [string, number, number | null][] = [
+    [t("Requests"), u.requests, u.limits.requests],
+    ...(u.local
+      ? ([[t("Database queries (rows are counted on Cloudflare only)"), u.d1_queries ?? 0, null]] as [string, number, null][])
+      : ([[t("Database rows read"), u.rows_read ?? 0, u.limits.rows_read], [t("Database rows written"), u.rows_written ?? 0, u.limits.rows_written]] as [string, number, number][])),
+    [t("Emails sent"), u.emails, u.limits.emails],
+  ];
+  return (
+    <section className="usage">
+      <strong>{t("Today on the live app (free plan, resets at midnight UTC)")}</strong>
+      {rows.map(([label, n, max]) => (
+        <p key={label} className={max && n >= max * 0.8 ? "warn" : ""}>
+          {label}: {n.toLocaleString()}
+          {max ? ` / ${max.toLocaleString()}` : ""}
+          {max && n >= max * 0.8 ? ` · ${t("near the free limit")}` : ""}
+        </p>
+      ))}
+    </section>
+  );
+}
+
+// The owner's Cloudflare API token, for the usage of their apps. Stored here, never shown again.
+function CloudflareToken({ connected, reload }: { connected: boolean; reload: () => void }) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await call("/api/cloudflare", "POST", { token });
+      setToken("");
+      reload();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setBusy(false);
+  }
+  return (
+    <section>
+      <h2 style={{ marginTop: 0 }}>Cloudflare</h2>
+      <p>
+        {connected ? t("Connected: your apps' usage shows on their page.") : t("To see your apps' usage, create an API token on Cloudflare (My Profile → API Tokens → Create Token → Custom token) with Account Analytics: Read and D1: Read, then paste it here.")}
+      </p>
+      <form className="row" onSubmit={save}>
+        <input className="grow" type="password" placeholder={t("Cloudflare API token")} value={token} onChange={(e) => setToken(e.target.value)} />
+        <button disabled={busy || !token}>{connected ? t("Replace") : t("Connect")}</button>
+      </form>
+      {error && <p className="error">{error}</p>}
+    </section>
   );
 }

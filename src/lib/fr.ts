@@ -53,8 +53,8 @@ export const FR: Record<string, string> = {
   "Creating…": "Création…",
   Create: "Créer",
   "Your email (the app's owner)": "Votre e-mail (propriétaire de l’app)",
-  "The emails each app sends (sign-up confirmation, password reset) are written to <app name>.log in the local repos folder.":
-    "Les e-mails envoyés par chaque app (confirmation d’inscription, mot de passe oublié) sont écrits dans <nom de l’app>.log, dans le dossier des dépôts locaux.",
+  "The emails each app sends (sign-in codes) are written to <app name>.log in the local repos folder, and shown on its page here.":
+    "Les e-mails envoyés par chaque app (codes de connexion) sont écrits dans <nom de l’app>.log, dans le dossier des dépôts locaux, et affichés sur sa page ici.",
   "In Claude Code (claude.ai can't reach this computer):": "Dans Claude Code (claude.ai ne peut pas joindre cet ordinateur) :",
   "In Claude Code:": "Dans Claude Code :",
   "In a terminal:": "Dans un terminal :",
@@ -65,7 +65,7 @@ export const FR: Record<string, string> = {
     "L’app en ligne et le brouillon ont des bases de données séparées : les comptes et données créés sur l’aperçu du brouillon ne sont pas dans l’app en ligne.",
   "No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.":
     "Pas encore de brouillon : demandez un changement à Claude et l’aperçu du brouillon apparaîtra ici. En attendant, voici l’app en ligne.",
-  "Sign up in your app with this email and confirm it to get the owner views.": "Inscrivez-vous dans votre app avec cet e-mail et confirmez-le pour avoir les vues propriétaire.",
+  "Sign in to your app with this email (by code or Google) to get the owner views.": "Connectez-vous à votre app avec cet e-mail (par code ou Google) pour avoir les vues propriétaire.",
   "(from any folder: -s user makes it available everywhere)": "(depuis n’importe quel dossier : -s user le rend disponible partout)",
   "The tools only appear in a new claude session, started after Authenticate.": "Les outils n’apparaissent que dans une nouvelle session claude, lancée après Authenticate.",
   "Other clients and agents: it's MCP over HTTP with standard OAuth (discovery at /.well-known/oauth-authorization-server, dynamic client registration, PKCE S256), then JSON-RPC POSTs to this address with the bearer token.":
@@ -83,8 +83,24 @@ export const FR: Record<string, string> = {
   "Then a tool, e.g. list_apps:": "Puis un outil, par exemple list_apps :",
   "To try an app's own API on its draft: POST <draft>/api/auth/sign-up/email with {email, password, name}, the header Origin: <draft> and a cookie jar, then call its routes with that cookie.":
     "Pour essayer l’API d’une app sur son brouillon : POST <brouillon>/api/auth/sign-up/email avec {email, password, name}, l’en-tête Origin: <brouillon> et un fichier de cookies, puis appelez ses routes avec ce cookie.",
-  "emails (sign-up confirmation, password reset) are written to {log}.": "les e-mails (confirmation d’inscription, mot de passe oublié) sont écrits dans {log}.",
-  "No confirmation email for {owner} here yet.": "Pas encore d’e-mail de confirmation pour {owner} ici.",
+  "emails (sign-in codes) are written to {log}.": "les e-mails (codes de connexion) sont écrits dans {log}.",
+  "Latest sign-in code for {owner}:": "Dernier code de connexion pour {owner} :",
+  "(works for 5 minutes)": "(valable 5 minutes)",
+  "No sign-in code for {owner} here yet.": "Pas encore de code de connexion pour {owner} ici.",
+  "Usage today: connect your Cloudflare account on the home page to see it.": "Usage du jour : connectez votre compte Cloudflare sur la page d’accueil pour le voir.",
+  Requests: "Requêtes",
+  "Database queries (rows are counted on Cloudflare only)": "Requêtes à la base (les lignes ne sont comptées que sur Cloudflare)",
+  "Database rows read": "Lignes lues dans la base",
+  "Database rows written": "Lignes écrites dans la base",
+  "Emails sent": "E-mails envoyés",
+  "Today on the live app (free plan, resets at midnight UTC)": "Aujourd’hui sur l’app en ligne (offre gratuite, remise à zéro à minuit UTC)",
+  "near the free limit": "proche de la limite gratuite",
+  "Connected: your apps' usage shows on their page.": "Connecté : l’usage de vos apps s’affiche sur leur page.",
+  "To see your apps' usage, create an API token on Cloudflare (My Profile → API Tokens → Create Token → Custom token) with Account Analytics: Read and D1: Read, then paste it here.":
+    "Pour voir l’usage de vos apps, créez un jeton d’API sur Cloudflare (My Profile → API Tokens → Create Token → Custom token) avec Account Analytics: Read et D1: Read, puis collez-le ici.",
+  "Cloudflare API token": "Jeton d’API Cloudflare",
+  Replace: "Remplacer",
+  Connect: "Connecter",
   Look: "Style",
   Clean: "Net",
   Warm: "Chaleureux",

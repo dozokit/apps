@@ -67,8 +67,8 @@ export async function newLocalApp(env: Env, name: unknown, ownerEmail: unknown, 
 // The draft's throwaway owner: a random email only the builder knows; the draft gets its hash in
 // preview-owner.json, which the template's isOwner reads on previews only (never live).
 export async function previewOwner(env: Env, app: App) {
-  if (app.preview_owner) return { ...(JSON.parse(app.preview_owner) as { email: string; password: string }), added: false };
-  const owner = { email: `owner-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}@preview.test`, password: crypto.randomUUID() };
+  if (app.preview_owner) return { ...(JSON.parse(app.preview_owner) as { email: string }), added: false };
+  const owner = { email: `owner-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}@preview.test` };
   const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(owner.email)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   await writeFiles(env, app, [{ path: "preview-owner.json", content: `{ "sha256": "${hash}" }\n` }], "Owner previews on the draft");
   await env.DB.prepare("update apps set preview_owner = ? where id = ?").bind(JSON.stringify(owner), app.id).run();
@@ -149,7 +149,7 @@ const blob = async (env: Env, repo: string, sha: string) => text((await gh<{ con
 // "migrations only add": an applied migration is never changed, and a new one never drops.
 export async function checkDraft(env: Env, app: App, changed: { filename: string; status: string; sha: string }[]) {
   const tree = (await gh<{ tree: { path: string; type: string; sha: string }[] }>(env, `/repos/${app.repo}/git/trees/draft?recursive=1`)).tree;
-  const wanted = tree.filter((t) => t.type === "blob" && (/^(worker\/.*\.ts|src\/.*\.(tsx?|css)|index\.html|public-routes\.json)$/.test(t.path)));
+  const wanted = tree.filter((t) => t.type === "blob" && (/^(worker\/.*\.ts|src\/.*\.(tsx?|css)|index\.html|public-routes\.json|package\.json|migrations\/.*\.sql)$/.test(t.path)));
   const files = Object.fromEntries(await Promise.all(wanted.map(async (t) => [t.path, await blob(env, app.repo, t.sha)])));
   const { errors } = checkRoutes(files, JSON.parse(files["public-routes.json"] ?? "[]"));
   for (const f of changed.filter((f) => f.filename.startsWith("migrations/"))) {

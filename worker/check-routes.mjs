@@ -2,10 +2,14 @@
 // Rules:
 //   1. The database (env.DB) is only used inside a route of worker/routes.ts (or by Better Auth in worker/auth.ts).
 //   2. A route that uses it calls requireUser() before, unless the route is listed in public-routes.json.
+//   4. Free-plan budgets: every query that filters or sorts hits an index (D1 counts each row it
+//      reads: 5 million a day), every list query has a LIMIT, and no package needs native code.
 //   3. The look lives in src/theme.css (and the built-in looks in src/themes/): no hard-coded colour (#abc, rgb(…), hsl(…)) and no inline style= anywhere else.
 // The Dozokit Apps builder runs this same function on a draft before Save, so it reads plain text, with no dependency.
 
-const ALLOWED_FILES = ["worker/auth.ts", "worker/env.ts"];
+const ALLOWED_FILES = ["worker/auth.ts", "worker/env.ts", "worker/jobs.ts", "worker/email.ts"];
+// Packages with native code or a bundled browser: they don't run on Cloudflare Workers.
+const NATIVE = ["sharp", "puppeteer", "playwright", "canvas", "bcrypt", "argon2", "better-sqlite3", "sqlite3", "node-gyp", "@napi-rs/canvas"];
 const ROUTE_KEY = /^(GET|POST|PUT|PATCH|DELETE) \//;
 
 // Identifiers, strings and punctuation, with their position. Comments are skipped; a template
@@ -68,6 +72,16 @@ function tokens(src) {
 export function checkRoutes(files, publicRoutes) {
   const errors = [];
   const routes = new Set();
+  if (files["package.json"]) {
+    const deps = Object.keys(JSON.parse(files["package.json"]).dependencies ?? {});
+    for (const d of deps.filter((d) => NATIVE.includes(d))) errors.push(`package.json: ${d} needs native code and doesn't run on Cloudflare Workers. Remove it (images: Cloudflare Images or the browser; hashing: crypto.subtle).`);
+  }
+  // Indexed columns, from the migrations: "table.column" that leads an index, a primary key or UNIQUE.
+  const migrations = Object.entries(files).filter(([f]) => /^migrations\/.*\.sql$/.test(f)).map(([, s]) => s).join("\n");
+  const indexed = new Set([...migrations.matchAll(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?\w+\s+ON\s+(\w+)\s*\(\s*(\w+)/gi)].map((m) => `${m[1]}.${m[2]}`.toLowerCase()));
+  for (const [, table, body] of migrations.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\n\);/gi)) {
+    for (const [, col] of body.matchAll(/^\s*(\w+)\s+\w+[^,\n]*\b(?:PRIMARY\s+KEY|UNIQUE)\b/gim)) indexed.add(`${table}.${col}`.toLowerCase());
+  }
   for (const [file, src] of Object.entries(files)) {
     // Only apps with the design kit (src/theme.css): older apps keep their own styling.
     if ("src/theme.css" in files && /^(src\/.*\.(tsx?|css)|index\.html)$/.test(file) && file !== "src/theme.css" && !file.startsWith("src/themes/")) {
@@ -95,6 +109,22 @@ export function checkRoutes(files, publicRoutes) {
       }
       spans.push({ route: t[k].text, from: k + 2, to: end });
     }
+    // SQL in strings: a filter or a sort needs an index; a list needs a LIMIT.
+    t.forEach((tok, k) => {
+      const sql = tok.type === "str" && /^\s*(SELECT|UPDATE|DELETE)\b/i.test(tok.text) ? tok.text.replace(/\s+/g, " ") : null;
+      if (!sql || !migrations) return;
+      const table = sql.match(/\b(?:FROM|UPDATE)\s+(\w+)/i)?.[1];
+      if (table && !/\bJOIN\b/i.test(sql)) {
+        const where = sql.match(/\bWHERE\b(.*?)(?:\bORDER\b|\bGROUP\b|\bLIMIT\b|\bRETURNING\b|$)/i)?.[1] ?? "";
+        const cols = [...where.matchAll(/(\w+)\s*(?:=|<|>|!=|\bIN\b|\bLIKE\b|\bIS\b|\bBETWEEN\b)/gi)].map((m) => m[1]).filter((c) => !/^(AND|OR|NOT)$/i.test(c));
+        const order = sql.match(/\bORDER\s+BY\s+(\w+)/i)?.[1];
+        const has = (c) => c.toLowerCase() === "rowid" || indexed.has(`${table}.${c}`.toLowerCase());
+        if (cols.length && !cols.some(has)) errors.push(`${file}:${line(tok.pos)}: the query on ${table} filters on ${cols.join(", ")} with no index. Add a migration with CREATE INDEX ${table}_${cols[0]} ON ${table}(${cols[0]}): D1's free plan counts every row a query reads (5 million a day).`);
+        else if (!cols.length && order && !has(order)) errors.push(`${file}:${line(tok.pos)}: the query on ${table} sorts on ${order} with no index. Add a migration with CREATE INDEX ${table}_${order} ON ${table}(${order}).`);
+      }
+      const list = t.slice(k + 1, k + 16).some((x) => x.type === "id" && x.text === "all");
+      if (/^\s*SELECT/i.test(sql) && list && !/\bLIMIT\b/i.test(sql)) errors.push(`${file}:${line(tok.pos)}: a list query without LIMIT. Page it: LIMIT 100 at most, with a cursor (?before=<last id>) for the next page.`);
+    });
     t.forEach((tok, k) => {
       const usesDb = (tok.type === "id" && tok.text === "DB") || (tok.type === "str" && tok.text === "DB" && t[k - 1]?.text === "[");
       if (!usesDb) return;
@@ -116,8 +146,8 @@ export function checkRoutes(files, publicRoutes) {
 if (import.meta.url === `file://${globalThis.process?.argv?.[1]}`) {
   const { readFileSync, readdirSync } = await import("node:fs");
   const files = Object.fromEntries(
-    [...["worker", "src"].flatMap((dir) => readdirSync(dir, { recursive: true }).map((f) => `${dir}/${f}`)), "index.html"]
-      .filter((f) => /\.(tsx?|css|html)$/.test(f))
+    [...["worker", "src", "migrations"].flatMap((dir) => readdirSync(dir, { recursive: true }).map((f) => `${dir}/${f}`)), "index.html", "package.json"]
+      .filter((f) => /\.(tsx?|css|html|sql|json)$/.test(f))
       .map((f) => [f, readFileSync(f, "utf8")]),
   );
   const publicRoutes = JSON.parse(readFileSync("public-routes.json", "utf8"));

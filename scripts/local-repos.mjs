@@ -83,11 +83,11 @@ async function answer(method, path, body) {
     const look = join(ROOT, name, "src", "themes", `${body.theme}.css`);
     if (/^[a-z]+$/.test(body.theme ?? "") && existsSync(look)) writeFileSync(join(ROOT, name, "src", "theme.css"), readFileSync(look));
     git(join(ROOT, name), ["commit", "-qam", `New app ${name}`]);
-    writeFileSync(join(ROOT, name, ".dev.vars"), `BETTER_AUTH_SECRET=${b64(crypto.getRandomValues(new Uint8Array(32)))}\nOWNER_EMAIL=${body.owner_email}\n`);
+    writeFileSync(join(ROOT, name, ".dev.vars"), `BETTER_AUTH_SECRET=${b64(crypto.getRandomValues(new Uint8Array(32)))}\nOWNER_EMAIL=${body.owner_email}\n# Cloudflare's Turnstile test keys: the box shows, and always passes.\nTURNSTILE_SITE_KEY=1x00000000000000000000AA\nTURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA\n`);
     run(name, false);
     return { repo: `local/${name}` };
   }
-  const m = path.match(/^\/(?:repos|local\/(urls|ready|mail))\/local\/([a-z0-9-]+)(\/.*)?$/);
+  const m = path.match(/^\/(?:repos|local\/(urls|ready|mail|usage))\/local\/([a-z0-9-]+)(\/.*)?$/);
   if (!m || !names().includes(m[2])) return [404, { message: "Not Found" }];
   const [, local, name, rest = ""] = m;
   const dir = join(ROOT, name);
@@ -98,10 +98,22 @@ async function answer(method, path, body) {
     const owner = readFileSync(join(dir, ".dev.vars"), "utf8").match(/^OWNER_EMAIL=(.*)$/m)?.[1];
     const latest = (log) => {
       const text = existsSync(log) ? readFileSync(log, "utf8") : "";
-      return [...text.matchAll(/\[email stub\] to=(\S+) subject="Confirm your email"\n.*?(http\S+)/g)].filter((m) => m[1] === owner).pop()?.[2] ?? null;
+      return [...text.matchAll(/\[email stub\] to=(\S+) subject="Your sign-in code"\nYour code: (\d{6})/g)].filter((m) => m[1] === owner).pop()?.[2] ?? null;
     };
     const [log, draftLog] = [join(ROOT, `${name}.log`), join(ROOT, `${name}.draft.log`)];
-    return { owner, log, owner_link: latest(log), draft_log: draftLog, draft_owner_link: latest(draftLog) };
+    return { owner, log, owner_code: latest(log), draft_log: draftLog, draft_owner_code: latest(draftLog) };
+  }
+  // Today's use of the live app: requests and D1 queries from its local observability, emails from its database.
+  if (local === "usage") {
+    const live = `http://localhost:${port(name, false)}`;
+    const q = async (sql) => (await (await fetch(`${live}/cdn-cgi/local/explorer/api/local/observability/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sql }) })).json()).result?.rows?.[0]?.[0] ?? 0;
+    const today = "date(start_ms / 1000, 'unixepoch') = date('now')";
+    const emails = JSON.parse(await promisify(execFile)("npx", ["wrangler", "d1", "execute", "DB", "--local", "--json", "--command", "SELECT n FROM email_count WHERE day = date('now')"], { cwd: dir }).then((r) => r.stdout, () => "[]"))[0]?.results?.[0]?.n ?? 0;
+    return {
+      requests: await q(`SELECT count(*) FROM spans WHERE parent_id IS NULL AND kind = 'http' AND ${today}`),
+      d1_queries: await q(`SELECT count(*) FROM spans WHERE name LIKE 'd1_%' AND ${today}`),
+      emails,
+    };
   }
   if (local === "urls") return { preview_url: `http://draft.localhost:${port(name, true)}`, live_url: `http://localhost:${port(name, false)}` };
   if (local === "ready") {

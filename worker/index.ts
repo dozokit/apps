@@ -3,6 +3,7 @@ import { login, logout, setupNeeded, signedIn } from "./auth";
 import { callback, gh, githubApp, installed, Refused, start } from "./github";
 import { mcp } from "./mcp";
 import { agentTokens, authorize, bearer, metadata, register, token, unauthorized } from "./oauth";
+import { cloudflareConnected, setCloudflareToken, usage } from "./cloudflare";
 import { THEMES } from "./themes";
 import { VERSION } from "./version";
 
@@ -25,9 +26,11 @@ async function api(req: Request, env: Env, url: URL, path: string) {
     const themes = THEMES;
     const gh = await githubApp(env);
     const dev = env.LOCAL_REPOS ? "local repos" : env.DEV_GITHUB_TOKEN ? "local token" : null;
-    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), apps: (await listApps(env)).map(({ preview_owner: _, ...a }) => a), mcp: `${url.origin}/mcp`, themes };
+    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), cloudflare: await cloudflareConnected(env), apps: (await listApps(env)).map(({ preview_owner: _, ...a }) => a), mcp: `${url.origin}/mcp`, themes };
   }
   if (path === "/api/github/start" && req.method === "POST") return start(env, url.origin);
+  if (path === "/api/cloudflare" && req.method === "POST") return setCloudflareToken(env, body.token).then(() => ({ ok: true }));
+  if (app?.[2] === "/usage") return usage(env, await getApp(env, app[1]));
   if (path === "/api/agent-tokens") return agentTokens(env, req.method === "POST" ? (body.revoke ? "revoke" : "new") : "list", String(body.revoke ?? ""));
   if (path === "/api/candidates") return candidates(env);
   if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, body.owner_email, body.theme, url.origin);
