@@ -125,6 +125,20 @@ export async function token(req: Request, env: Env) {
   return json({ error: "unsupported_grant_type" }, 400);
 }
 
+// For an agent already running, which can't open a browser to sign in: a token the owner copies
+// from the builder. 24 hours, shown once, kept hashed, revocable on the same page.
+export async function agentTokens(env: Env, action: "new" | "list" | "revoke", hash?: string) {
+  const now = Date.now();
+  if (action === "revoke") await env.DB.prepare("delete from oauth_tokens where client_id = 'agent' and hash = ?").bind(hash ?? "").run();
+  if (action !== "new") return (await env.DB.prepare("select hash, created_at, expires_at from oauth_tokens where client_id = 'agent' and expires_at > ? order by created_at desc").bind(now).all()).results;
+  const token = random();
+  await env.DB.batch([
+    env.DB.prepare("insert or ignore into oauth_clients (id, name, redirect_uris, created_at) values ('agent', 'Agent token', '[]', ?)").bind(now),
+    env.DB.prepare("insert into oauth_tokens (hash, kind, client_id, expires_at, created_at) values (?, 'access', 'agent', ?, ?)").bind(await sha(token), now + 24 * HOUR, now),
+  ]);
+  return { token, expires_at: now + 24 * HOUR };
+}
+
 // The chat app calling /mcp: its access token, or null.
 export async function bearer(req: Request, env: Env) {
   const t = (req.headers.get("authorization") ?? "").match(/^Bearer\s+(.+)$/i)?.[1];

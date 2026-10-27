@@ -48,7 +48,8 @@ function run(name, draft) {
     while (await fetch(`http://localhost:${p}/`).then(() => true, () => false)) await new Promise((r) => setTimeout(r, 300));
     // The app's log, where its emails land locally (sign-up confirmation, password reset).
     const log = openSync(join(ROOT, `${key}.log`), "a");
-    entry.proc = spawn("npx", ["wrangler", "dev", "--port", String(p), "--inspector-port", String(p + 1000)], { cwd: dir, stdio: ["ignore", log, log], detached: true });
+    // The draft runs as a preview (PREVIEW=1), as on Cloudflare: owner previews only work there.
+    entry.proc = spawn("npx", ["wrangler", "dev", "--port", String(p), "--inspector-port", String(p + 1000), ...(draft ? ["--var", "PREVIEW:1"] : [])], { cwd: dir, stdio: ["ignore", log, log], detached: true });
     for (let i = 0; i < 60; i++) {
       if (await fetch(`http://localhost:${p}/`).then(() => true, () => false)) return `http://localhost:${p}`;
       await new Promise((r) => setTimeout(r, 1000));
@@ -77,7 +78,8 @@ async function answer(method, path, body) {
     git(join(ROOT, name), ["remote", "remove", "origin"]);
     const wrangler = join(ROOT, name, "wrangler.jsonc");
     writeFileSync(wrangler, readFileSync(wrangler, "utf8").replace(/"name":\s*"[^"]+"/, `"name": "${name}"`));
-    if (body.theme_css) writeFileSync(join(ROOT, name, "src", "theme.css"), body.theme_css);
+    const look = join(ROOT, name, "src", "themes", `${body.theme}.css`);
+    if (/^[a-z]+$/.test(body.theme ?? "") && existsSync(look)) writeFileSync(join(ROOT, name, "src", "theme.css"), readFileSync(look));
     git(join(ROOT, name), ["commit", "-qam", `New app ${name}`]);
     writeFileSync(join(ROOT, name, ".dev.vars"), `BETTER_AUTH_SECRET=${b64(crypto.getRandomValues(new Uint8Array(32)))}\nOWNER_EMAIL=${body.owner_email}\n`);
     run(name, false);
@@ -91,11 +93,13 @@ async function answer(method, path, body) {
   // one doesn't log you out of the other (on Cloudflare they're different hosts anyway).
   // Where this app's emails land, and the latest link that confirms the owner's email.
   if (local === "mail") {
-    const log = join(ROOT, `${name}.log`);
     const owner = readFileSync(join(dir, ".dev.vars"), "utf8").match(/^OWNER_EMAIL=(.*)$/m)?.[1];
-    const text = existsSync(log) ? readFileSync(log, "utf8") : "";
-    const link = [...text.matchAll(/\[email stub\] to=(\S+) subject="Confirm your email"\n.*?(http\S+)/g)].filter((m) => m[1] === owner).pop()?.[2] ?? null;
-    return { log, owner, owner_link: link };
+    const latest = (log) => {
+      const text = existsSync(log) ? readFileSync(log, "utf8") : "";
+      return [...text.matchAll(/\[email stub\] to=(\S+) subject="Confirm your email"\n.*?(http\S+)/g)].filter((m) => m[1] === owner).pop()?.[2] ?? null;
+    };
+    const [log, draftLog] = [join(ROOT, `${name}.log`), join(ROOT, `${name}.draft.log`)];
+    return { owner, log, owner_link: latest(log), draft_log: draftLog, draft_owner_link: latest(draftLog) };
   }
   if (local === "urls") return { preview_url: `http://draft.localhost:${port(name, true)}`, live_url: `http://localhost:${port(name, false)}` };
   if (local === "ready") {

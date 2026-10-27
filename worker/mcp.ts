@@ -1,4 +1,4 @@
-import { getApp, listApps, readFile, save, status, writeFiles } from "./apps";
+import { getApp, listApps, previewOwner, readFile, save, status, writeFiles } from "./apps";
 import { gh, Refused } from "./github";
 import type { Env } from "./index";
 import { shots } from "./shot";
@@ -51,18 +51,21 @@ const TOOLS: Tool[] = [
   },
   {
     name: "preview",
-    description: "Screenshots only, no clicks or typing: pages of the app's draft preview, desktop and phone, up to 4 pages per call. To check what a click does (book, cancel, a rule between two users), try it on the draft address yourself, e.g. with its API. By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
+    description: "Screenshots only, no clicks or typing: pages of the app's draft preview, desktop and phone, up to 4 pages per call. To check what a click does (book, cancel, a rule between two users), try it on the draft address yourself, e.g. with its API. as_owner: true shows owner-only pages (the first time, it adds preview-owner.json to the draft). By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
     inputSchema: {
       type: "object",
-      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, paths: { type: "array", items: { type: "string" }, description: "Several pages at once, e.g. [\"/\", \"/admin\"] (up to 4)" }, logged_out: { type: "boolean", description: "Show the page logged out" } },
+      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, paths: { type: "array", items: { type: "string" }, description: "Several pages at once, e.g. [\"/\", \"/admin\"] (up to 4)" }, logged_out: { type: "boolean", description: "Show the page logged out" }, as_owner: { type: "boolean", description: "Log in as the app's owner instead (a throwaway owner on the draft's own database, never live), for owner-only pages" } },
       required: ["app_id"],
     },
     run: async (a, { env, origin }) => {
       const app = await getApp(env, a.app_id);
       if (!app.preview_url) throw new Refused("This app has no draft preview address yet: the owner sets it in the editor.");
+      // The first owner preview adds preview-owner.json to the draft: the draft is rebuilt with it.
+      const owner = a.as_owner === true ? await previewOwner(env, app) : null;
+      if (owner?.added && !env.LOCAL_REPOS) return { note: "Owner previews are now set up: the draft has a new preview-owner.json and Cloudflare is rebuilding it. Call preview with as_owner again shortly." };
       if (env.LOCAL_REPOS) await gh(env, `/local/ready/${app.repo}`);
       const paths = Array.isArray(a.paths) && a.paths.length ? a.paths.slice(0, 4).map(String) : [String(a.path || "/")];
-      const s = await shots(env, paths.map((p) => new URL(p, app.preview_url!).href), a.logged_out !== true);
+      const s = await shots(env, paths.map((p) => new URL(p, app.preview_url!).href), owner ?? a.logged_out !== true);
       return new Seen(s.images, { logged_in_as: s.user, shots: s.shots, try_it_yourself: app.preview_url, editor: editor(origin, app.id) });
     },
   },

@@ -7,7 +7,7 @@ import { THEMES } from "./themes";
 // Save merges draft into main, which Cloudflare puts live. Only repos made from dozokit/app-template
 // are apps, so the builder never writes to its own repo or to any other.
 
-export type App = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null; created_at: number };
+export type App = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null; created_at: number; preview_owner: string | null };
 
 export const listApps = async (env: Env) => (await env.DB.prepare("select * from apps order by id").all<App>()).results;
 
@@ -52,15 +52,27 @@ export async function addApp(env: Env, repo: string, origin: string, theme?: unk
   const [preview, live] = local ? [local.preview_url, local.live_url] : sub ? [`https://draft-${worker}.${sub}.workers.dev`, `https://${worker}.${sub}.workers.dev`] : [null, null];
   const app = (await env.DB.prepare("insert into apps (repo, worker, preview_url, live_url, created_at) values (?, ?, ?, ?, ?) returning *").bind(repo, worker, preview, live, Date.now()).first<App>())!;
   // The look picked at New app (the template ships Clean): on the draft, live once the owner saves.
-  if (typeof theme === "string" && theme !== "Clean" && THEMES[theme]) await writeFiles(env, app, [{ path: "src/theme.css", content: THEMES[theme] }], `Theme: ${theme}`);
+  const look = THEMES.find((t) => t.name === theme && t.name !== "Clean") && (await file(env, repo, `src/themes/${String(theme).toLowerCase()}.css`, "main"));
+  if (look) await writeFiles(env, app, [{ path: "src/theme.css", content: look }], `Theme: ${theme}`);
   return app;
 }
 
 // Local mode: New app makes a git repo from the local template instead of the Deploy button.
 export async function newLocalApp(env: Env, name: unknown, ownerEmail: unknown, theme: unknown, origin: string) {
-  const css = THEMES[String(theme)] ?? THEMES.Clean;
-  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name, owner_email: ownerEmail, theme_css: css }) });
+  const look = (THEMES.find((t) => t.name === theme) ?? THEMES[0]).name.toLowerCase();
+  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name, owner_email: ownerEmail, theme: look }) });
   return addApp(env, repo, origin);
+}
+
+// The draft's throwaway owner: a random email only the builder knows; the draft gets its hash in
+// preview-owner.json, which the template's isOwner reads on previews only (never live).
+export async function previewOwner(env: Env, app: App) {
+  if (app.preview_owner) return { ...(JSON.parse(app.preview_owner) as { email: string; password: string }), added: false };
+  const owner = { email: `preview-owner-${crypto.randomUUID().replace(/-/g, "")}@example.test`, password: crypto.randomUUID() };
+  const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(owner.email)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  await writeFiles(env, app, [{ path: "preview-owner.json", content: `{ "sha256": "${hash}" }\n` }], "Owner previews on the draft");
+  await env.DB.prepare("update apps set preview_owner = ? where id = ?").bind(JSON.stringify(owner), app.id).run();
+  return { ...owner, added: true };
 }
 
 export async function setAddresses(env: Env, app: App, body: { preview_url?: unknown; live_url?: unknown }) {

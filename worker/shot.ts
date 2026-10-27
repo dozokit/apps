@@ -13,7 +13,7 @@ const b64 = (buf: Uint8Array) => {
 
 // Logged in: a throwaway test user signs up on the page's own app first (the template's Better Auth),
 // so the shots show what a customer sees. Only ever called on a draft preview, never the live app.
-export async function shots(env: Env, urls: string[], login: boolean) {
+export async function shots(env: Env, urls: string[], login: boolean | { email: string; password: string }) {
   if (!env.BROWSER) throw new Refused("This builder has no browser binding, so it can't take screenshots.");
   const browser = await puppeteer.launch(env.BROWSER);
   try {
@@ -21,11 +21,14 @@ export async function shots(env: Env, urls: string[], login: boolean) {
     let user: string | null = null;
     if (login) {
       await page.goto(new URL("/", urls[0]).href, { waitUntil: "networkidle0", timeout: 20_000 });
-      const email = `preview-${crypto.randomUUID().slice(0, 8)}@example.test`;
-      const ok = await page.evaluate(
-        `fetch("/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "${email}", password: "${crypto.randomUUID()}", name: "Preview" }) }).then((r) => r.ok)`,
-      );
-      user = ok ? email : null;
+      // A given user (the draft's owner) signs in, or signs up the first time; else a new throwaway user.
+      const who = login === true ? { email: `preview-${crypto.randomUUID().slice(0, 8)}@example.test`, password: crypto.randomUUID() } : login;
+      const email = who.email;
+      const post = (path: string) =>
+        `fetch("${path}", { method: "POST", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify({ ...who, name: "Preview" }))} }).then((r) => r.ok)`;
+      const ok = (login !== true && (await page.evaluate(post("/api/auth/sign-in/email")))) || (await page.evaluate(post("/api/auth/sign-up/email")));
+      // The owner's email is the secret that makes it the owner on the draft: not repeated.
+      user = ok ? (login === true ? email : "the draft's throwaway owner") : null;
     }
     const out: { shot: string; image: string }[] = [];
     for (const url of urls) {

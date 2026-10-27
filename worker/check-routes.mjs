@@ -2,7 +2,7 @@
 // Rules:
 //   1. The database (env.DB) is only used inside a route of worker/routes.ts (or by Better Auth in worker/auth.ts).
 //   2. A route that uses it calls requireUser() before, unless the route is listed in public-routes.json.
-//   3. The look lives in src/theme.css: no hard-coded colour (#abc, rgb(…), hsl(…)) and no inline style= anywhere else.
+//   3. The look lives in src/theme.css (and the built-in looks in src/themes/): no hard-coded colour (#abc, rgb(…), hsl(…)) and no inline style= anywhere else.
 // The Dozokit Apps builder runs this same function on a draft before Save, so it reads plain text, with no dependency.
 
 const ALLOWED_FILES = ["worker/auth.ts", "worker/env.ts"];
@@ -70,7 +70,7 @@ export function checkRoutes(files, publicRoutes) {
   const routes = new Set();
   for (const [file, src] of Object.entries(files)) {
     // Only apps with the design kit (src/theme.css): older apps keep their own styling.
-    if ("src/theme.css" in files && /^(src\/.*\.(tsx?|css)|index\.html)$/.test(file) && file !== "src/theme.css") {
+    if ("src/theme.css" in files && /^(src\/.*\.(tsx?|css)|index\.html)$/.test(file) && file !== "src/theme.css" && !file.startsWith("src/themes/")) {
       src.split("\n").forEach((text, i) => {
         const colour = text.match(/#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/)?.[0];
         if (colour) errors.push(`${file}:${i + 1} uses ${colour} — use a theme colour from src/theme.css.`);

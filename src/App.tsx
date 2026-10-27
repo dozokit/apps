@@ -4,7 +4,9 @@ import { lang, setLang, t, tr } from "./lib/i18n";
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
 type Theme = { name: string; paper: string; ink: string; accent: string; "font-head": string };
 type State = { version: string; local: boolean; themes: Theme[]; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
-type Detail = AppRow & { draft: boolean; changed_files: string[]; local_mail: { log: string; owner: string; owner_link: string | null } | null };
+type Mail = { owner: string; log: string; owner_link: string | null; draft_log: string; draft_owner_link: string | null };
+type Detail = AppRow & { draft: boolean; changed_files: string[]; local_mail: Mail | null };
+type AgentToken = { hash: string; created_at: number; expires_at: number };
 
 const TEMPLATE_DEPLOY = "https://deploy.workers.cloudflare.com/?url=https://github.com/dozokit/app-template";
 
@@ -231,6 +233,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
           <li>{t("Start claude, type /mcp, pick dozokit-apps → Authenticate, then click Allow on the page that opens.")}</li>
           <li>{t("The tools only appear in a new claude session, started after Authenticate.")}</li>
         </ol>
+        <AgentTokens mcp={state.mcp} />
         <p className="muted">{t("Other clients and agents: it's MCP over HTTP with standard OAuth (discovery at /.well-known/oauth-authorization-server, dynamic client registration, PKCE S256), then JSON-RPC POSTs to this address with the bearer token.")}</p>
       </section>
       <p className="muted">
@@ -307,18 +310,20 @@ function Editor({ id }: { id: number }) {
       </p>
       {notice && <p className="ok">{notice}</p>}
       {error && <p className="error">{error}</p>}
-      {app.local_mail && (
-        <p className="muted">
-          {t("This app's emails (sign-up confirmation, password reset) are written to {log}.", { log: app.local_mail.log })}{" "}
-          {app.local_mail.owner_link ? (
-            <>
-              {t("Latest link to confirm {owner}:", { owner: app.local_mail.owner })} <a href={app.local_mail.owner_link} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{app.local_mail.owner_link}</a>
-            </>
-          ) : (
-            t("No confirmation email for {owner} yet: sign up with it in the live app.", { owner: app.local_mail.owner })
-          )}
-        </p>
-      )}
+      {app.local_mail &&
+        ([[t("Live app"), app.local_mail.log, app.local_mail.owner_link], [t("Draft preview"), app.local_mail.draft_log, app.local_mail.draft_owner_link]] as const).map(([which, log, link]) => (
+          <p key={log} className="muted">
+            {which} : {t("emails (sign-up confirmation, password reset) are written to {log}.", { log })}{" "}
+            {link ? (
+              <>
+                {t("Latest link to confirm {owner}:", { owner: app.local_mail!.owner })}{" "}
+                <a href={link} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{link}</a>
+              </>
+            ) : (
+              t("No confirmation email for {owner} here yet.", { owner: app.local_mail!.owner })
+            )}
+          </p>
+        ))}
       <p className="muted">{t("Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.")}</p>
       {!app.draft && <p>{t("No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.")}</p>}
       {(app.draft ? app.preview_url : app.live_url) ? (
@@ -339,5 +344,50 @@ function Editor({ id }: { id: number }) {
         </p>
       )}
     </main>
+  );
+}
+
+// An agent already running (a Claude Code session, a script) can't open a browser to sign in:
+// it gets a token from here instead, valid 24 hours.
+function AgentTokens({ mcp }: { mcp: string }) {
+  const [tokens, setTokens] = useState<AgentToken[]>([]);
+  const [fresh, setFresh] = useState<string | null>(null);
+  const load = () => call<AgentToken[]>("/api/agent-tokens").then(setTokens);
+  useEffect(() => void load(), []);
+  async function make() {
+    setFresh((await call<{ token: string }>("/api/agent-tokens", "POST")).token);
+    load();
+  }
+  const revoke = (hash: string) => call<AgentToken[]>("/api/agent-tokens", "POST", { revoke: hash }).then(setTokens);
+  const curl = `curl -s ${mcp} -H "Authorization: Bearer ${fresh}" -H "content-type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`;
+  return (
+    <>
+      <p>
+        {t("An agent already running, which can't open /mcp:")} <button className="line" onClick={make}>{t("Connect an agent")}</button>
+      </p>
+      {fresh && (
+        <section>
+          <p>{t("Shown once, valid 24 hours. In a terminal (tools in claude sessions started after):")}</p>
+          <p>
+            {/* --header takes several values, so it goes last. */}
+            <code>claude mcp add --transport http -s user dozokit-apps {mcp} --header "Authorization: Bearer {fresh}"</code>
+          </p>
+          <p>{t("Or right away, from the running session:")}</p>
+          <p>
+            <code>{curl}</code>
+          </p>
+        </section>
+      )}
+      {tokens.length > 0 && (
+        <ul className="apps">
+          {tokens.map((k) => (
+            <li key={k.hash} className="row">
+              <span className="grow muted">{t("Agent token made {made}, valid until {until}", { made: new Date(k.created_at).toLocaleString(), until: new Date(k.expires_at).toLocaleString() })}</span>
+              <button className="line" onClick={() => revoke(k.hash)}>{t("Revoke")}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
