@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
     <title>Dozokit Apps</title>
+    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=public-sans:700|fraunces:600|archivo:800|sora:600&display=swap" />
     <style>
       :root { --paper: #f6f1ec; --ink: #2a2421; --muted: #6b625c; --line: #ddd3ca; --bad: #a3261b; }
       * { box-sizing: border-box; }
@@ -25,6 +26,14 @@
       code { background: #efe7df; padding: .1rem .3rem; border-radius: 4px; word-break: break-all; }
       iframe { width: 100%; height: calc(100vh - 13rem); min-height: 24rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
       a { color: inherit; }
+      .themes { border: 0; padding: 0; margin: 0 0 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: .6rem; }
+      .themes legend { font-weight: 600; margin-bottom: .4rem; }
+      .themes label { display: grid; gap: .3rem; justify-items: start; cursor: pointer; font-size: .95rem; }
+      .themes input { position: absolute; opacity: 0; }
+      .swatch { width: 100%; height: 3.6rem; border: 1px solid var(--line); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 .7rem; font-size: 1.35rem; font-weight: 700; }
+      .swatch i { width: 1.1rem; height: 1.1rem; border-radius: 50%; }
+      .themes label.picked .swatch { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .themes input:focus-visible + .swatch { outline: 2px solid var(--ink); outline-offset: 4px; }
     </style>
   </head>
   <body>

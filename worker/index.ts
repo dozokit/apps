@@ -3,6 +3,7 @@ import { login, logout, setupNeeded, signedIn } from "./auth";
 import { callback, gh, githubApp, installed, Refused, start } from "./github";
 import { mcp } from "./mcp";
 import { authorize, bearer, metadata, register, token, unauthorized } from "./oauth";
+import { THEMES } from "./themes";
 import { VERSION } from "./version";
 
 export interface Env {
@@ -20,14 +21,16 @@ async function api(req: Request, env: Env, url: URL, path: string) {
   const body = req.method === "POST" || req.method === "PUT" ? ((await req.json().catch(() => ({}))) as Record<string, unknown>) : {};
   const app = path.match(/^\/api\/apps\/(\d+)(\/\w+)?$/);
   if (path === "/api/state") {
+    // Each look's swatch: its paper, ink and accent colours and its heading font.
+    const themes = Object.entries(THEMES).map(([name, css]) => ({ name, ...Object.fromEntries(["paper", "ink", "accent", "font-head"].map((k) => [k, css.match(new RegExp(`--${k}: ([^;]+);`))?.[1]])) }));
     const gh = await githubApp(env);
     const dev = env.LOCAL_REPOS ? "local repos" : env.DEV_GITHUB_TOKEN ? "local token" : null;
-    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), apps: await listApps(env), mcp: `${url.origin}/mcp` };
+    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), apps: await listApps(env), mcp: `${url.origin}/mcp`, themes };
   }
   if (path === "/api/github/start" && req.method === "POST") return start(env, url.origin);
   if (path === "/api/candidates") return candidates(env);
-  if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, body.owner_email, url.origin);
-  if (path === "/api/apps" && req.method === "POST") return addApp(env, String(body.repo ?? ""), url.origin);
+  if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, body.owner_email, body.theme, url.origin);
+  if (path === "/api/apps" && req.method === "POST") return addApp(env, String(body.repo ?? ""), url.origin, body.theme);
   if (app && !app[2] && req.method === "GET") {
     const a = await getApp(env, app[1]);
     const s = await status(env, a);

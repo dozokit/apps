@@ -77,6 +77,7 @@ async function answer(method, path, body) {
     git(join(ROOT, name), ["remote", "remove", "origin"]);
     const wrangler = join(ROOT, name, "wrangler.jsonc");
     writeFileSync(wrangler, readFileSync(wrangler, "utf8").replace(/"name":\s*"[^"]+"/, `"name": "${name}"`));
+    if (body.theme_css) writeFileSync(join(ROOT, name, "src", "theme.css"), body.theme_css);
     git(join(ROOT, name), ["commit", "-qam", `New app ${name}`]);
     writeFileSync(join(ROOT, name, ".dev.vars"), `BETTER_AUTH_SECRET=${b64(crypto.getRandomValues(new Uint8Array(32)))}\nOWNER_EMAIL=${body.owner_email}\n`);
     run(name, false);

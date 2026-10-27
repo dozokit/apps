@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { lang, setLang, t, tr } from "./lib/i18n";
 
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
-type State = { version: string; local: boolean; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
+type Theme = { name: string; paper: string; ink: string; accent: string; "font-head": string };
+type State = { version: string; local: boolean; themes: Theme[]; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
 type Detail = AppRow & { draft: boolean; changed_files: string[]; local_mail: { log: string; owner: string; owner_link: string | null } | null };
 
 const TEMPLATE_DEPLOY = "https://deploy.workers.cloudflare.com/?url=https://github.com/dozokit/app-template";
@@ -76,6 +77,22 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");
+  const [theme, setTheme] = useState("Clean");
+  // The look a new app starts with; Claude changes it later in its src/theme.css.
+  const picker = (
+    <fieldset className="themes">
+      <legend>{t("Look")}</legend>
+      {state.themes.map((th) => (
+        <label key={th.name} className={theme === th.name ? "picked" : ""}>
+          <input type="radio" name="theme" value={th.name} checked={theme === th.name} onChange={() => setTheme(th.name)} />
+          <span className="swatch" style={{ background: th.paper, color: th.ink, fontFamily: th["font-head"] }}>
+            Aa<i style={{ background: th.accent }} />
+          </span>
+          {t(th.name)}
+        </label>
+      ))}
+    </fieldset>
+  );
   const gh = state.github;
 
   // GitHub only accepts the manifest as a form the owner's browser posts.
@@ -105,7 +122,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
   async function add(repo: string | null) {
     setBusy(true);
     try {
-      const app = await (repo ? call<AppRow>("/api/apps", "POST", { repo }) : call<AppRow>("/api/apps/local", "POST", { name, owner_email: owner }));
+      const app = await (repo ? call<AppRow>("/api/apps", "POST", { repo, theme }) : call<AppRow>("/api/apps/local", "POST", { name, owner_email: owner, theme }));
       location.hash = `#app/${app.id}`;
     } catch (e) {
       setError((e as Error).message);
@@ -167,6 +184,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
         <section>
           <h2 style={{ marginTop: 0 }}>{t("New app")}</h2>
           <p className="muted">{t("Local mode: the app is a git repo on this computer, made from the local template, and runs here.")}</p>
+          {picker}
           <form className="row" onSubmit={(e) => (e.preventDefault(), add(null))}>
             <input className="grow" placeholder={t("Name (lowercase, e.g. bookings)")} value={name} onChange={(e) => setName(e.target.value)} />
             <input className="grow" type="email" placeholder={t("Your email (the app's owner)")} value={owner} onChange={(e) => setOwner(e.target.value)} />
@@ -187,6 +205,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
             <a className="btn" href={TEMPLATE_DEPLOY} target="_blank" rel="noreferrer">{t("Deploy a new app")}</a>
           </p>
           <p>2. {t("Once Cloudflare shows it online, add it here.")}</p>
+          {picker}
           <button className="line" disabled={busy} onClick={find}>{t("Find my new app")}</button>
           {found && !found.length && <p className="muted">{t("No new app found yet. If the deploy finished, check the GitHub App can reach all your repositories.")}</p>}
           {found?.map((repo) => (

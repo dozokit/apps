@@ -1,6 +1,7 @@
 import { checkRoutes } from "./check-routes.mjs";
 import { gh, reachableRepos, Refused } from "./github";
 import type { Env } from "./index";
+import { THEMES } from "./themes";
 
 // The owner's apps. Changes go to the app's `draft` branch, which Cloudflare builds as a preview;
 // Save merges draft into main, which Cloudflare puts live. Only repos made from dozokit/app-template
@@ -42,19 +43,23 @@ export async function candidates(env: Env) {
   return (await Promise.all(repos.map(async (r) => ((await appRepo(env, r.full_name)) ? r.full_name : null)))).filter(Boolean) as string[];
 }
 
-export async function addApp(env: Env, repo: string, origin: string) {
+export async function addApp(env: Env, repo: string, origin: string, theme?: unknown) {
   if (!(await candidates(env)).includes(repo)) throw new Refused(`${repo} isn't an app this builder can reach: it must be made from dozokit/app-template, with main as its default branch.`);
   const worker = (await appRepo(env, repo))!;
   // On workers.dev, the app lives next to the builder: <worker>.<subdomain>.workers.dev, its draft at draft-<worker>.
   const sub = new URL(origin).hostname.match(/^[^.]+\.([^.]+)\.workers\.dev$/)?.[1];
   const local = env.LOCAL_REPOS ? await gh<{ preview_url: string; live_url: string }>(env, `/local/urls/${repo}`) : null;
   const [preview, live] = local ? [local.preview_url, local.live_url] : sub ? [`https://draft-${worker}.${sub}.workers.dev`, `https://${worker}.${sub}.workers.dev`] : [null, null];
-  return env.DB.prepare("insert into apps (repo, worker, preview_url, live_url, created_at) values (?, ?, ?, ?, ?) returning *").bind(repo, worker, preview, live, Date.now()).first<App>();
+  const app = (await env.DB.prepare("insert into apps (repo, worker, preview_url, live_url, created_at) values (?, ?, ?, ?, ?) returning *").bind(repo, worker, preview, live, Date.now()).first<App>())!;
+  // The look picked at New app (the template ships Clean): on the draft, live once the owner saves.
+  if (typeof theme === "string" && theme !== "Clean" && THEMES[theme]) await writeFiles(env, app, [{ path: "src/theme.css", content: THEMES[theme] }], `Theme: ${theme}`);
+  return app;
 }
 
 // Local mode: New app makes a git repo from the local template instead of the Deploy button.
-export async function newLocalApp(env: Env, name: unknown, ownerEmail: unknown, origin: string) {
-  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name, owner_email: ownerEmail }) });
+export async function newLocalApp(env: Env, name: unknown, ownerEmail: unknown, theme: unknown, origin: string) {
+  const css = THEMES[String(theme)] ?? THEMES.Clean;
+  const { repo } = await gh<{ repo: string }>(env, "/local/new", { method: "POST", body: JSON.stringify({ name, owner_email: ownerEmail, theme_css: css }) });
   return addApp(env, repo, origin);
 }
 
@@ -132,7 +137,7 @@ const blob = async (env: Env, repo: string, sha: string) => text((await gh<{ con
 // "migrations only add": an applied migration is never changed, and a new one never drops.
 export async function checkDraft(env: Env, app: App, changed: { filename: string; status: string; sha: string }[]) {
   const tree = (await gh<{ tree: { path: string; type: string; sha: string }[] }>(env, `/repos/${app.repo}/git/trees/draft?recursive=1`)).tree;
-  const wanted = tree.filter((t) => t.type === "blob" && (/^worker\/.*\.ts$/.test(t.path) || t.path === "public-routes.json"));
+  const wanted = tree.filter((t) => t.type === "blob" && (/^(worker\/.*\.ts|src\/.*\.(tsx?|css)|index\.html|public-routes\.json)$/.test(t.path)));
   const files = Object.fromEntries(await Promise.all(wanted.map(async (t) => [t.path, await blob(env, app.repo, t.sha)])));
   const { errors } = checkRoutes(files, JSON.parse(files["public-routes.json"] ?? "[]"));
   for (const f of changed.filter((f) => f.filename.startsWith("migrations/"))) {
