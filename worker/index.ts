@@ -1,9 +1,9 @@
-import { addApp, candidates, getApp, listApps, newLocalApp, save, setAddresses, status } from "./apps";
+import { addAnalytics, addApp, candidates, cronSlots, getApp, listApps, newLocalApp, save, setAddresses, setDomain, status, turnOnCron } from "./apps";
 import { login, logout, setupNeeded, signedIn } from "./auth";
 import { callback, gh, githubApp, installed, Refused, start } from "./github";
 import { mcp } from "./mcp";
 import { agentTokens, authorize, bearer, metadata, register, token, unauthorized } from "./oauth";
-import { cloudflareConnected, setCloudflareToken, usage } from "./cloudflare";
+import { backupFile, backups, cloudflareConnected, restore, secretNames, setCloudflareToken, setSecret, TOKEN_LINK, usage } from "./cloudflare";
 import { THEMES } from "./themes";
 import { VERSION } from "./version";
 
@@ -26,11 +26,31 @@ async function api(req: Request, env: Env, url: URL, path: string) {
     const themes = THEMES;
     const gh = await githubApp(env);
     const dev = env.LOCAL_REPOS ? "local repos" : env.DEV_GITHUB_TOKEN ? "local token" : null;
-    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), cloudflare: await cloudflareConnected(env), apps: (await listApps(env)).map(({ preview_owner: _, ...a }) => a), mcp: `${url.origin}/mcp`, themes };
+    return { version: VERSION, github: gh ? { app: gh.slug, page: gh.html_url, installed: Boolean(gh.installation_id) } : dev ? { app: dev, installed: true } : null, local: Boolean(env.LOCAL_REPOS), cloudflare: await cloudflareConnected(env), cloudflare_link: TOKEN_LINK, apps: (await listApps(env)).map(({ preview_owner: _, ...a }) => a), mcp: `${url.origin}/mcp`, themes };
   }
   if (path === "/api/github/start" && req.method === "POST") return start(env, url.origin);
   if (path === "/api/cloudflare" && req.method === "POST") return setCloudflareToken(env, body.token).then(() => ({ ok: true }));
   if (app?.[2] === "/usage") return usage(env, await getApp(env, app[1]));
+  if (app?.[2] === "/backups") {
+    const a = await getApp(env, app[1]);
+    const key = url.searchParams.get("key");
+    if (key) return backupFile(env, a, key);
+    const slots = await cronSlots(env);
+    return { on: slots.on[a.id], used: slots.used, of: slots.of, backups: await backups(env, a) };
+  }
+  if (app?.[2] === "/secrets") {
+    const a = await getApp(env, app[1]);
+    if (req.method === "POST") await setSecret(env, a, body.name, body.value);
+    return { names: await secretNames(env, a) };
+  }
+  if (app?.[2] === "/domain" && req.method === "POST") return setDomain(env, await getApp(env, app[1]), body.domain);
+  if (app?.[2] === "/analytics" && req.method === "POST") return addAnalytics(env, await getApp(env, app[1]), body.snippet);
+  if (app?.[2] === "/cron" && req.method === "POST") return turnOnCron(env, await getApp(env, app[1]));
+  if (app?.[2] === "/restore" && req.method === "POST") {
+    const a = await getApp(env, app[1]);
+    if (String(body.confirm ?? "").trim() !== a.worker) throw new Refused(`Type ${a.worker} to confirm.`);
+    return restore(env, a, body.when);
+  }
   if (path === "/api/agent-tokens") return agentTokens(env, req.method === "POST" ? (body.revoke ? "revoke" : "new") : "list", String(body.revoke ?? ""));
   if (path === "/api/candidates") return candidates(env);
   if (path === "/api/apps/local" && req.method === "POST" && env.LOCAL_REPOS) return newLocalApp(env, body.name, body.owner_email, body.theme, url.origin);

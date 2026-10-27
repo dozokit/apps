@@ -2,6 +2,7 @@ import { checkDraft, getApp, listApps, previewOwner, readFile, save, status, wri
 import { gh, Refused } from "./github";
 import type { Env } from "./index";
 import { shots } from "./shot";
+import { appErrors, secretNames } from "./cloudflare";
 
 // The builder as an MCP server, for the chat apps the owner connected (Claude). The chat's own model
 // writes the code on the owner's plan; these tools read and write the app's files on its draft
@@ -19,11 +20,11 @@ const appId = { app_id: { type: "number", description: "From list_apps" } };
 const TOOLS: Tool[] = [
   {
     name: "list_apps",
-    description: "The owner's apps: id, GitHub repo, live address, draft preview address, unsaved changes and the editor link to show the owner. Each app is a React + Vite app on Cloudflare Workers with a D1 database and Better Auth logins; read its CLAUDE.md first.",
+    description: "The owner's apps: id, GitHub repo, live address, draft preview address, unsaved changes, the names of the secrets set (never their values: the owner sets them in the builder) and the editor link to show the owner. Each app is a React + Vite app on Cloudflare Workers with a D1 database and Better Auth logins; read its CLAUDE.md first.",
     inputSchema: { type: "object", properties: {} },
     run: async (_a, { env, origin }) =>
       Promise.all(
-        (await listApps(env)).map(async (a) => ({ app_id: a.id, repo: a.repo, live: a.live_url, draft_preview: a.preview_url, unsaved_files: (await status(env, a)).changed_files.length, editor: editor(origin, a.id) })),
+        (await listApps(env)).map(async (a) => ({ app_id: a.id, repo: a.repo, live: a.live_url, draft_preview: a.preview_url, unsaved_files: (await status(env, a)).changed_files.length, secrets_set: await secretNames(env, a).catch(() => null), editor: editor(origin, a.id) })),
       ),
   },
   {
@@ -60,7 +61,7 @@ const TOOLS: Tool[] = [
     description: "Screenshots only, no clicks or typing: pages of the app's draft preview, desktop and phone, up to 4 pages per call. To check what a click does (book, cancel, a rule between two users), call the draft's API yourself: sign up with POST <draft>/api/auth/sign-up/email {\"email\",\"password\" (8+),\"name\"} with the header Origin: <draft> and a cookie jar, then call its routes with that cookie; data made that way shows in later previews of that user only. as_owner: true shows owner-only pages (the first time, it adds preview-owner.json to the draft). By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
     inputSchema: {
       type: "object",
-      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, paths: { type: "array", items: { type: "string" }, description: "Several pages at once, e.g. [\"/\", \"/admin\"] (up to 4)" }, logged_out: { type: "boolean", description: "Show the page logged out" }, as_owner: { type: "boolean", description: "Log in as the app's owner instead (a throwaway owner on the draft's own database, never live), for owner-only pages" } },
+      properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, paths: { type: "array", items: { type: "string" }, description: "Several pages at once, e.g. [\"/\", \"/admin\"] (up to 4)" }, logged_out: { type: "boolean", description: "Show the page logged out" }, as_owner: { type: "boolean", description: "Log in as the app's owner instead (a throwaway owner on the draft's own database, never live), for owner-only pages" }, as: { type: "string", description: "Log in as one of seed.sql's users (an address ending in @preview.test), to see pages with their data" } },
       required: ["app_id"],
     },
     run: async (a, { env, origin }) => {
@@ -71,8 +72,18 @@ const TOOLS: Tool[] = [
       if (owner?.added && !env.LOCAL_REPOS) return { note: "Owner previews are now set up: the draft has a new preview-owner.json and Cloudflare is rebuilding it. Call preview with as_owner again shortly." };
       if (env.LOCAL_REPOS) await gh(env, `/local/ready/${app.repo}`);
       const paths = Array.isArray(a.paths) && a.paths.length ? a.paths.slice(0, 4).map(String) : [String(a.path || "/")];
-      const s = await shots(env, paths.map((p) => new URL(p, app.preview_url!).href), owner ?? a.logged_out !== true);
+      const seeded = typeof a.as === "string" && a.as.endsWith("@preview.test") ? { email: a.as } : null;
+      const s = await shots(env, paths.map((p) => new URL(p, app.preview_url!).href), owner ?? seeded ?? a.logged_out !== true);
       return new Seen(s.images, { logged_in_as: s.user, shots: s.shots, try_it_yourself: app.preview_url, editor: editor(origin, app.id) });
+    },
+  },
+  {
+    name: "app_errors",
+    description: "The app's 20 latest unhandled errors (when, which route, the message and stack), from the live app or its draft preview. Read them after the owner reports a problem, or after save.",
+    inputSchema: { type: "object", properties: { ...appId, draft: { type: "boolean", description: "The draft preview's errors instead of the live app's" } }, required: ["app_id"] },
+    run: async (a, { env }) => {
+      const errors = await appErrors(env, await getApp(env, a.app_id), a.draft === true);
+      return errors.length ? errors : "No errors recorded.";
     },
   },
   {

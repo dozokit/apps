@@ -75,6 +75,60 @@ export async function previewOwner(env: Env, app: App) {
   return { ...owner, added: true };
 }
 
+// The app's one cron (alerts + Sunday backup), off by default: Cloudflare's free plan allows 5 crons
+// per account, and the backup needs R2 turned on. Turning it on is a draft change the owner saves.
+const CRON = '  "triggers": { "crons": ["0 * * * *"] },\n';
+export async function cronSlots(env: Env) {
+  const apps = await listApps(env);
+  const on = await Promise.all(apps.map(async (a) => Boolean((await file(env, a.repo, "wrangler.jsonc", "main").catch(() => null))?.includes('"crons"'))));
+  return { used: on.filter(Boolean).length, of: 5, on: Object.fromEntries(apps.map((a, i) => [a.id, on[i]])) };
+}
+
+export async function turnOnCron(env: Env, app: App) {
+  const slots = await cronSlots(env);
+  if (slots.on[app.id]) throw new Refused("Backups and alerts are already on for this app.");
+  if (slots.used >= slots.of) throw new Refused(`Your apps already use the ${slots.of} crons Cloudflare's free plan allows per account. Turn one off first (remove its "triggers" from its wrangler.jsonc).`);
+  const ref = (await draftSha(env, app.repo, false)) ? "draft" : "main";
+  const wrangler = await file(env, app.repo, "wrangler.jsonc", ref);
+  if (wrangler?.includes('"crons"')) throw new Refused("Backups and alerts are already in this app's draft: Save to turn them on.");
+  if (!wrangler?.includes("  // Workers Logs")) throw new Refused("This app's wrangler.jsonc isn't the template's: add the cron by hand (see its CLAUDE.md).");
+  const next = wrangler.replace("  // Workers Logs", `${CRON}  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "${app.worker}-backups" }],\n  // Workers Logs`);
+  return writeFiles(env, app, [{ path: "wrangler.jsonc", content: next }], "Backups and alerts on");
+}
+
+// A custom domain, as in Dozokit Sites: the owner adds it to the app's Worker in Cloudflare, the
+// builder checks it really reaches this app, then it becomes the app's live address.
+export async function setDomain(env: Env, app: App, raw: unknown) {
+  const domain = String(raw ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const local = env.LOCAL_REPOS && /^[a-z0-9.-]+\.localhost:\d+$/.test(domain);
+  if (!local && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) throw new Refused("Type only the domain, like app.mondomaine.fr.");
+  const n = crypto.randomUUID().slice(0, 8);
+  const url = `${local ? "http" : "https"}://${domain}`;
+  const res = await fetch(`${url}/api/dozokit-check?n=${n}`, { redirect: "manual", signal: AbortSignal.timeout(8000) }).catch(() => null);
+  const where = `In Cloudflare: Workers & Pages → ${app.worker} → Settings → Domains & Routes → Add → Custom domain → ${domain}. It can take a few minutes.`;
+  if (!res) throw new Refused(`No answer from ${domain} yet. ${where}`);
+  if (res.headers.get("x-dozokit-app") !== n) throw new Refused(`${domain} doesn't lead to ${app.worker} yet. ${where}`);
+  await env.DB.prepare("update apps set live_url = ? where id = ?").bind(url, app.id).run();
+  return { live_url: url };
+}
+
+// Dozokit Analytics: the owner pastes the snippet their Analytics gives for this app's site; it goes
+// into the app's index.html on the draft (one line, replaced if it's there already).
+export async function addAnalytics(env: Env, app: App, snippet: unknown) {
+  const s = String(snippet ?? "");
+  const site = s.match(/data-site="([\w-]+)"/)?.[1];
+  const src = s.match(/src="(https:\/\/[^"\s]+\/t\.js)"/)?.[1];
+  if (!site || !src) throw new Refused('Paste the snippet from your Dozokit Analytics (Sites → this site), like <script defer data-site="…" src="https://…/t.js"></script>.');
+  const ref = (await draftSha(env, app.repo, false)) ? "draft" : "main";
+  const html = (await file(env, app.repo, "index.html", ref)) ?? "";
+  const tag = `    <script defer data-site="${site}" src="${src}"></script>`;
+  const next = /\n\s*<script defer data-site="[^"]*" src="[^"]*\/t\.js"><\/script>/.test(html)
+    ? html.replace(/\n\s*<script defer data-site="[^"]*" src="[^"]*\/t\.js"><\/script>/, `\n${tag}`)
+    : html.replace("  </head>", `${tag}\n  </head>`);
+  if (next === html) throw new Refused("This app's index.html has no </head> to put the script before.");
+  return writeFiles(env, app, [{ path: "index.html", content: next }], "Dozokit Analytics");
+}
+
 export async function setAddresses(env: Env, app: App, body: { preview_url?: unknown; live_url?: unknown }) {
   const url = (v: unknown) => (typeof v === "string" && /^https:\/\/[\w.-]+(\/.*)?$/.test(v) ? v : null);
   await env.DB.prepare("update apps set preview_url = ?, live_url = ? where id = ?").bind(url(body.preview_url), url(body.live_url), app.id).run();

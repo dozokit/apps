@@ -31,7 +31,7 @@ export async function shots(env: Env, urls: string[], login: boolean | { email: 
         `fetch("${path}", { method: "POST", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify(body))} }).then((r) => r.ok)`;
       const ok = (await page.evaluate(post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" }))) && (await page.evaluate(post("/api/auth/sign-in/email-otp", { email, otp })));
       // The owner's email is the secret that makes it the owner on the draft: not repeated.
-      user = ok ? (login === true ? email : "the draft's throwaway owner") : null;
+      user = ok ? (login === true || email.endsWith("@preview.test") && !email.startsWith("owner-") ? email : "the draft's throwaway owner") : null;
     }
     const out: { shot: string; image: string }[] = [];
     for (const url of urls) {

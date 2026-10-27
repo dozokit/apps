@@ -4,7 +4,7 @@ import { lang, setLang, t, tr } from "./lib/i18n";
 type AppRow = { id: number; repo: string; worker: string; preview_url: string | null; live_url: string | null };
 type Theme = { name: string; paper: string; ink: string; accent: string; "font-head": string };
 type Usage = { requests: number; rows_read?: number; rows_written?: number; d1_queries?: number; emails: number; local: boolean; limits: Record<string, number> };
-type State = { version: string; local: boolean; cloudflare: boolean; themes: Theme[]; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
+type State = { version: string; local: boolean; cloudflare: boolean; cloudflare_link: string; themes: Theme[]; github: { app: string; page?: string; installed: boolean } | null; apps: AppRow[]; mcp: string };
 type Mail = { owner: string; log: string; owner_code: string | null; draft_log: string; draft_owner_code: string | null };
 type Detail = AppRow & { draft: boolean; changed_files: string[]; local_mail: Mail | null };
 type AgentToken = { hash: string; created_at: number; expires_at: number };
@@ -220,7 +220,7 @@ function Home({ state, reload }: { state: State; reload: () => void }) {
         </section>
       )}
 
-      {!state.local && <CloudflareToken connected={state.cloudflare} reload={reload} />}
+      {!state.local && <CloudflareToken connected={state.cloudflare} link={state.cloudflare_link} reload={reload} />}
 
       <section>
         <h2 style={{ marginTop: 0 }}>{t("Build with Claude")}</h2>
@@ -327,6 +327,9 @@ function Editor({ id }: { id: number }) {
           </p>
         ))}
       <UsagePanel id={id} />
+      <SecretsPanel id={id} />
+      <DomainPanel id={id} worker={app.worker} onChange={load} />
+      <BackupsPanel id={id} worker={app.worker} local={Boolean(app.local_mail)} onChange={load} />
       <p className="muted">{t("Live and draft have separate databases: accounts and data made on the draft preview aren't on the live app.")}</p>
       {!app.draft && <p>{t("No draft yet: ask Claude to change something and the draft preview appears here. Meanwhile, this is the live app.")}</p>}
       {(app.draft ? app.preview_url : app.live_url) ? (
@@ -432,7 +435,7 @@ function UsagePanel({ id }: { id: number }) {
 }
 
 // The owner's Cloudflare API token, for the usage of their apps. Stored here, never shown again.
-function CloudflareToken({ connected, reload }: { connected: boolean; reload: () => void }) {
+function CloudflareToken({ connected, link, reload }: { connected: boolean; link: string; reload: () => void }) {
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -452,14 +455,130 @@ function CloudflareToken({ connected, reload }: { connected: boolean; reload: ()
   return (
     <section>
       <h2 style={{ marginTop: 0 }}>Cloudflare</h2>
-      <p>
-        {connected ? t("Connected: your apps' usage shows on their page.") : t("To see your apps' usage, create an API token on Cloudflare (My Profile → API Tokens → Create Token → Custom token) with Account Analytics: Read and D1: Read, then paste it here.")}
-      </p>
+      {connected ? (
+        <p>{t("Connected: usage, errors, backups and secrets of your apps work from their page.")}</p>
+      ) : (
+        <ol>
+          <li>
+            <a href={link} target="_blank" rel="noreferrer">{t("Create the token on Cloudflare")}</a> {t("(the permissions are filled in: read analytics, your apps' databases and backups, set their secrets). Scroll down, Continue to summary, Create Token.")}
+          </li>
+          <li>{t("Copy it and paste it here, once. It stays in this builder and is never shown again.")}</li>
+        </ol>
+      )}
       <form className="row" onSubmit={save}>
         <input className="grow" type="password" placeholder={t("Cloudflare API token")} value={token} onChange={(e) => setToken(e.target.value)} />
         <button disabled={busy || !token}>{connected ? t("Replace") : t("Connect")}</button>
       </form>
       {error && <p className="error">{error}</p>}
+    </section>
+  );
+}
+
+// Backups and alerts: the app's one cron, its weekly copies, and undoing changes with Time Travel.
+function BackupsPanel({ id, worker, local, onChange }: { id: number; worker: string; local: boolean; onChange: () => void }) {
+  const [b, setB] = useState<{ on: boolean; used: number; of: number; backups: { key: string; size: number }[] } | null>(null);
+  const [when, setWhen] = useState("");
+  const [confirmName, setConfirmName] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = () => call<typeof b>(`/api/apps/${id}/backups`).then(setB).catch((e) => setMsg(e.message));
+  useEffect(() => void load(), [id]);
+  const act = (p: Promise<unknown>, done: string) => p.then(() => (setMsg(done), load(), onChange())).catch((e) => setMsg(e.message));
+  if (!b) return msg ? <p className="error">{msg}</p> : null;
+  return (
+    <section className="usage">
+      <strong>{t("Backups and alerts")}</strong>
+      {b.on ? (
+        <p>{t("On: every hour the app emails you new errors and emails past 80 a day; every Sunday it copies its database (4 copies kept).")}</p>
+      ) : (
+        <p>
+          {t("Off. Turning it on uses 1 of the {of} crons Cloudflare's free plan allows per account ({used} used by your apps) and needs R2 turned on in Cloudflare (R2 → Get started, free up to 10 GB).", { of: b.of, used: b.used })}{" "}
+          <button className="line" onClick={() => act(call(`/api/apps/${id}/cron`, "POST"), t("Added to the draft: Save to turn it on."))}>{t("Turn on")}</button>
+        </p>
+      )}
+      {b.backups.map((k) => (
+        <p key={k.key}>
+          <a href={`/api/apps/${id}/backups?key=${encodeURIComponent(k.key)}`} download>{k.key.slice(8)}</a> · {Math.ceil(k.size / 1024)} KB
+        </p>
+      ))}
+      {local ? (
+        <p className="muted">{t("Undoing changes uses D1 Time Travel, which only exists on Cloudflare.")}</p>
+      ) : (
+        <form className="row" onSubmit={(e) => (e.preventDefault(), act(call(`/api/apps/${id}/restore`, "POST", { when: new Date(when).toISOString(), confirm: confirmName }), t("Restored.")))}>
+          <span>{t("Put the live database back as it was on")}</span>
+          <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} required />
+          <input placeholder={t("Type {name} to confirm", { name: worker })} value={confirmName} onChange={(e) => setConfirmName(e.target.value)} required />
+          <button className="line">{t("Restore")}</button>
+        </form>
+      )}
+      {msg && <p>{msg}</p>}
+    </section>
+  );
+}
+
+// The app's secrets (API keys): set here, stored as Worker secrets, never shown again.
+function SecretsPanel({ id }: { id: number }) {
+  const [names, setNames] = useState<string[] | null>(null);
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => void call<{ names: string[] | null }>(`/api/apps/${id}/secrets`).then((r) => setNames(r.names)).catch((e) => setMsg(e.message)), [id]);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    try {
+      setNames((await call<{ names: string[] }>(`/api/apps/${id}/secrets`, "POST", { name, value })).names);
+      setMsg(t("{name} is set.", { name }));
+      setName("");
+      setValue("");
+    } catch (err) {
+      setMsg((err as Error).message);
+    }
+  }
+  const has = (n: string) => names?.includes(n);
+  return (
+    <section className="usage">
+      <strong>{t("Secrets")}</strong>
+      {names === null ? (
+        <p className="muted">{t("Connect your Cloudflare account on the home page to set your app's secrets.")}</p>
+      ) : (
+        <>
+          <p>{names.length ? t("Set: {names}. Values are never shown again; Claude only sees the names.", { names: names.join(", ") }) : t("None set yet.")}</p>
+          {!has("RESEND_API_KEY") && <p className="warn">{t("Before launch: sign-in codes are emailed through Resend. Verify your domain at resend.com/domains, then set RESEND_API_KEY and EMAIL_FROM (an address on that domain). Free: 100 emails a day.")}</p>}
+          {!has("GOOGLE_CLIENT_ID") && <p>{t("Make Google the main way in: create an OAuth client (Google Cloud → APIs & Services → Credentials, redirect URI <app address>/api/auth/callback/google), then set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.")}</p>}
+          <form className="row" onSubmit={save}>
+            <input placeholder="STRIPE_SECRET_KEY" value={name} onChange={(e) => setName(e.target.value.toUpperCase())} required />
+            <input className="grow" type="password" placeholder={t("Value")} value={value} onChange={(e) => setValue(e.target.value)} required />
+            <button className="line">{t("Set")}</button>
+          </form>
+        </>
+      )}
+      {msg && <p>{msg}</p>}
+    </section>
+  );
+}
+
+// A custom domain for the live app, and Dozokit Analytics on it.
+function DomainPanel({ id, worker, onChange }: { id: number; worker: string; onChange: () => void }) {
+  const [domain, setDomain] = useState("");
+  const [snippet, setSnippet] = useState("");
+  const [msg, setMsg] = useState("");
+  const act = (p: Promise<unknown>, done: string) => p.then(() => (setMsg(done), onChange())).catch((e) => setMsg(e.message));
+  return (
+    <section className="usage">
+      <strong>{t("Your domain")}</strong>
+      <p>
+        {t("1. In Cloudflare: Workers & Pages → {worker} → Settings → Domains & Routes → Add → Custom domain (the domain must be on your Cloudflare). 2. Type it here.", { worker })}
+      </p>
+      <p className="muted">{t("Site and app on one domain: your Dozokit Sites page on mondomaine.fr (added to dozokit-sites), this app on app.mondomaine.fr (added here), and a link from the site's menu to the app. If you use Google sign-in, add the new address to its redirect URIs.")}</p>
+      <form className="row" onSubmit={(e) => (e.preventDefault(), act(call(`/api/apps/${id}/domain`, "POST", { domain }), t("Done: the live app is at {domain}.", { domain })))}>
+        <input className="grow" placeholder="app.mondomaine.fr" value={domain} onChange={(e) => setDomain(e.target.value)} required />
+        <button className="line">{t("Check and use")}</button>
+      </form>
+      <strong>Dozokit Analytics</strong>
+      <form className="row" onSubmit={(e) => (e.preventDefault(), act(call(`/api/apps/${id}/analytics`, "POST", { snippet }), t("Added to the draft: Save to put it live.")))}>
+        <input className="grow" placeholder={t("Paste the snippet from your Dozokit Analytics")} value={snippet} onChange={(e) => setSnippet(e.target.value)} required />
+        <button className="line">{t("Add")}</button>
+      </form>
+      {msg && <p>{msg}</p>}
     </section>
   );
 }

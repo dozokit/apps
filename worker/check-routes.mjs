@@ -7,7 +7,7 @@
 //   3. The look lives in src/theme.css (and the built-in looks in src/themes/): no hard-coded colour (#abc, rgb(…), hsl(…)) and no inline style= anywhere else.
 // The Dozokit Apps builder runs this same function on a draft before Save, so it reads plain text, with no dependency.
 
-const ALLOWED_FILES = ["worker/auth.ts", "worker/env.ts", "worker/jobs.ts", "worker/email.ts"];
+const ALLOWED_FILES = ["worker/auth.ts", "worker/env.ts", "worker/jobs.ts", "worker/email.ts", "worker/errors.ts", "worker/cron.ts"];
 // Packages with native code or a bundled browser: they don't run on Cloudflare Workers.
 const NATIVE = ["sharp", "puppeteer", "playwright", "canvas", "bcrypt", "argon2", "better-sqlite3", "sqlite3", "node-gyp", "@napi-rs/canvas"];
 const ROUTE_KEY = /^(GET|POST|PUT|PATCH|DELETE) \//;

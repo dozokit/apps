@@ -39,7 +39,7 @@ function run(name, draft) {
   entry.ready = (async () => {
     await previous?.ready.catch(() => {});
     try {
-      await promisify(execFile)("sh", ["-c", "npm install --prefer-offline --no-audit --no-fund && npm run build && npx wrangler d1 migrations apply DB --local"], { cwd: dir, maxBuffer: 16 << 20 });
+      await promisify(execFile)("sh", ["-c", `npm install --prefer-offline --no-audit --no-fund && npm run build && npx wrangler d1 migrations apply DB --local${draft ? " && (test ! -f seed.sql || npx wrangler d1 execute DB --local --file seed.sql)" : ""}`], { cwd: dir, maxBuffer: 16 << 20 });
     } catch (e) {
       // The last good version keeps running: the next good build has to be able to stop it.
       entry.proc = previous?.proc ?? null;
@@ -87,7 +87,7 @@ async function answer(method, path, body) {
     run(name, false);
     return { repo: `local/${name}` };
   }
-  const m = path.match(/^\/(?:repos|local\/(urls|ready|mail|usage))\/local\/([a-z0-9-]+)(\/.*)?$/);
+  const m = path.match(/^\/(?:repos|local\/(urls|ready|mail|usage|d1|backups|secrets))\/local\/([a-z0-9-]+)([/?].*)?$/);
   if (!m || !names().includes(m[2])) return [404, { message: "Not Found" }];
   const [, local, name, rest = ""] = m;
   const dir = join(ROOT, name);
@@ -114,6 +114,34 @@ async function answer(method, path, body) {
       d1_queries: await q(`SELECT count(*) FROM spans WHERE name LIKE 'd1_%' AND ${today}`),
       emails,
     };
+  }
+  // A query on the app's local database (live, or ?draft=1), for the builder's errors and usage.
+  if (local === "d1") {
+    const at = rest.includes("draft=1") ? join(ROOT, `${name}.draft`) : dir;
+    const sql = body.params?.length ? body.sql.replace(/\?/g, () => { const v = body.params.shift(); return typeof v === "number" ? String(v) : `'${String(v).replace(/'/g, "''")}'`; }) : body.sql;
+    const out = await promisify(execFile)("npx", ["wrangler", "d1", "execute", "DB", "--local", "--json", "--command", sql], { cwd: at, maxBuffer: 16 << 20 }).then((r) => r.stdout, (e) => { throw new Error(e.stderr || e.message); });
+    return JSON.parse(out)[0]?.results ?? [];
+  }
+  // The live app's weekly copies in its local R2 (through its local explorer), or one of them.
+  if (local === "backups") {
+    const r2 = `http://localhost:${port(name, false)}/cdn-cgi/local/explorer/api/r2/buckets/${name}-backups/objects`;
+    const key = new URL(rest, "http://x").searchParams.get("key");
+    if (key) return (await fetch(`${r2}/${encodeURIComponent(key)}`)).json();
+    const list = await (await fetch(`${r2}?prefix=backups/`)).json().catch(() => ({}));
+    return (list.result ?? []).map((o) => ({ key: o.key, size: o.size }));
+  }
+  // The app's secrets locally: its .dev.vars (live and draft). Only names go back.
+  if (local === "secrets") {
+    if (method === "POST") {
+      for (const d of [dir, join(ROOT, `${name}.draft`)].filter((d) => existsSync(join(d, ".dev.vars")))) {
+        const lines = readFileSync(join(d, ".dev.vars"), "utf8").split("\n").filter((l) => l && !l.startsWith(`${body.name}=`));
+        writeFileSync(join(d, ".dev.vars"), [...lines, `${body.name}=${body.value}`].join("\n") + "\n");
+      }
+      run(name, false);
+      if (existsSync(join(ROOT, `${name}.draft`))) run(name, true);
+      return {};
+    }
+    return readFileSync(join(dir, ".dev.vars"), "utf8").split("\n").filter((l) => /^\w+=/.test(l)).map((l) => l.split("=")[0]);
   }
   if (local === "urls") return { preview_url: `http://draft.localhost:${port(name, true)}`, live_url: `http://localhost:${port(name, false)}` };
   if (local === "ready") {
