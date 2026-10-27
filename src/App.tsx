@@ -359,7 +359,7 @@ function AgentTokens({ mcp }: { mcp: string }) {
     load();
   }
   const revoke = (hash: string) => call<AgentToken[]>("/api/agent-tokens", "POST", { revoke: hash }).then(setTokens);
-  const curl = `curl -s ${mcp} -H "Authorization: Bearer ${fresh}" -H "content-type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`;
+  const curl = (rpc: string) => `curl -s ${mcp} -H "Authorization: Bearer ${fresh}" -H "content-type: application/json" -d '${rpc}'`;
   return (
     <>
       <p>
@@ -374,8 +374,13 @@ function AgentTokens({ mcp }: { mcp: string }) {
           </p>
           <p>{t("Or right away, from the running session:")}</p>
           <p>
-            <code>{curl}</code>
+            <code>{curl('{"jsonrpc":"2.0","id":1,"method":"tools/list"}')}</code>
           </p>
+          <p>{t("Then a tool, e.g. list_apps:")}</p>
+          <p>
+            <code>{curl('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_apps","arguments":{}}}')}</code>
+          </p>
+          <p className="muted">{t("To try an app's own API on its draft: POST <draft>/api/auth/sign-up/email with {email, password, name}, the header Origin: <draft> and a cookie jar, then call its routes with that cookie.")}</p>
         </section>
       )}
       {tokens.length > 0 && (

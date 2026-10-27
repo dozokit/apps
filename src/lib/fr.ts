@@ -80,6 +80,9 @@ export const FR: Record<string, string> = {
   "Or right away, from the running session:": "Ou tout de suite, depuis la session déjà lancée :",
   "Agent token made {made}, valid until {until}": "Jeton d’agent créé le {made}, valable jusqu’au {until}",
   Revoke: "Révoquer",
+  "Then a tool, e.g. list_apps:": "Puis un outil, par exemple list_apps :",
+  "To try an app's own API on its draft: POST <draft>/api/auth/sign-up/email with {email, password, name}, the header Origin: <draft> and a cookie jar, then call its routes with that cookie.":
+    "Pour essayer l’API d’une app sur son brouillon : POST <brouillon>/api/auth/sign-up/email avec {email, password, name}, l’en-tête Origin: <brouillon> et un fichier de cookies, puis appelez ses routes avec ce cookie.",
   "emails (sign-up confirmation, password reset) are written to {log}.": "les e-mails (confirmation d’inscription, mot de passe oublié) sont écrits dans {log}.",
   "No confirmation email for {owner} here yet.": "Pas encore d’e-mail de confirmation pour {owner} ici.",
   Look: "Style",

@@ -1,4 +1,4 @@
-import { getApp, listApps, previewOwner, readFile, save, status, writeFiles } from "./apps";
+import { checkDraft, getApp, listApps, previewOwner, readFile, save, status, writeFiles } from "./apps";
 import { gh, Refused } from "./github";
 import type { Env } from "./index";
 import { shots } from "./shot";
@@ -34,7 +34,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "write_files",
-    description: "Write whole files to the app's draft branch as one commit (never to main); the draft preview is then rebuilt from it. Check it with preview. Give each file's full new content, or delete: true to remove it.",
+    description: "Write whole files to the app's draft branch as one commit (never to main); the draft preview is then rebuilt from it. The answer gives the safety check's result (and locally the build's). Check the look with preview. Give each file's full new content, or delete: true to remove it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -46,12 +46,18 @@ const TOOLS: Tool[] = [
     },
     run: async (a, { env, origin }) => {
       const app = await getApp(env, a.app_id);
-      return { ...(await writeFiles(env, app, a.files, a.message)), draft_preview: app.preview_url, editor: editor(origin, app.id) };
+      const written = await writeFiles(env, app, a.files, a.message);
+      // The same safety check Save runs, on the draft as it is now; locally also the draft's whole build.
+      const errors = await checkDraft(env, app, (await status(env, app)).files);
+      const build = env.LOCAL_REPOS
+        ? await gh(env, `/local/ready/${app.repo}`).then(() => "passed", (e: Error) => e.message)
+        : "Cloudflare builds the draft from this commit; preview shows the result once it's done.";
+      return { ...written, safety_check: errors.length ? errors : "passed", build, draft_preview: app.preview_url, editor: editor(origin, app.id) };
     },
   },
   {
     name: "preview",
-    description: "Screenshots only, no clicks or typing: pages of the app's draft preview, desktop and phone, up to 4 pages per call. To check what a click does (book, cancel, a rule between two users), try it on the draft address yourself, e.g. with its API. as_owner: true shows owner-only pages (the first time, it adds preview-owner.json to the draft). By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
+    description: "Screenshots only, no clicks or typing: pages of the app's draft preview, desktop and phone, up to 4 pages per call. To check what a click does (book, cancel, a rule between two users), call the draft's API yourself: sign up with POST <draft>/api/auth/sign-up/email {\"email\",\"password\" (8+),\"name\"} with the header Origin: <draft> and a cookie jar, then call its routes with that cookie; data made that way shows in later previews of that user only. as_owner: true shows owner-only pages (the first time, it adds preview-owner.json to the draft). By default logged in as a new throwaway test user it signs up on the draft's own database (never live), so logged-in pages show; logged_out: true shows what a visitor sees. Locally it waits for the draft's build; on Cloudflare, if it still shows the old version, the build isn't done: call it again shortly.",
     inputSchema: {
       type: "object",
       properties: { ...appId, path: { type: "string", description: "A page of the app, e.g. /settings (default /)" }, paths: { type: "array", items: { type: "string" }, description: "Several pages at once, e.g. [\"/\", \"/admin\"] (up to 4)" }, logged_out: { type: "boolean", description: "Show the page logged out" }, as_owner: { type: "boolean", description: "Log in as the app's owner instead (a throwaway owner on the draft's own database, never live), for owner-only pages" } },

@@ -41,6 +41,8 @@ function run(name, draft) {
     try {
       await promisify(execFile)("sh", ["-c", "npm install --prefer-offline --no-audit --no-fund && npm run build && npx wrangler d1 migrations apply DB --local"], { cwd: dir, maxBuffer: 16 << 20 });
     } catch (e) {
+      // The last good version keeps running: the next good build has to be able to stop it.
+      entry.proc = previous?.proc ?? null;
       throw new Error(`The build failed, as Cloudflare's would:\n${`${e.stdout ?? ""}${e.stderr ?? ""}`.slice(-3000)}`);
     }
     const p = port(name, draft);

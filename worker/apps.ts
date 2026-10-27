@@ -68,7 +68,7 @@ export async function newLocalApp(env: Env, name: unknown, ownerEmail: unknown, 
 // preview-owner.json, which the template's isOwner reads on previews only (never live).
 export async function previewOwner(env: Env, app: App) {
   if (app.preview_owner) return { ...(JSON.parse(app.preview_owner) as { email: string; password: string }), added: false };
-  const owner = { email: `preview-owner-${crypto.randomUUID().replace(/-/g, "")}@example.test`, password: crypto.randomUUID() };
+  const owner = { email: `owner-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}@preview.test`, password: crypto.randomUUID() };
   const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(owner.email)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   await writeFiles(env, app, [{ path: "preview-owner.json", content: `{ "sha256": "${hash}" }\n` }], "Owner previews on the draft");
   await env.DB.prepare("update apps set preview_owner = ? where id = ?").bind(JSON.stringify(owner), app.id).run();
